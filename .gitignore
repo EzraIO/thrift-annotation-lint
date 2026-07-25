@@ -1,0 +1,42 @@
+# Maven
+target/
+dependency-reduced-pom.xml
+
+# Gradle and compiler output
+.gradle/
+out/
+*.class
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Visual Studio Code
+.vscode/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+credentials.json
+service-account.json
+*.pem
+*.key
+id_rsa
