@@ -1,0 +1,26 @@
+# Pipe-delimited: case-id|kind|expected-code|max-exact-models
+valid-models|valid||512
+invalid-model-declaration|violation|AW1001|512
+missing-field-id|violation|AW2001|512
+duplicate-field-id|violation|AW2002|512
+conflicting-field-id|violation|AW2003|512
+conflicting-field-name|violation|AW2004|512
+conflicting-requiredness|violation|AW2005|512
+invalid-legacy-id|violation|AW2006|512
+conflicting-idl-annotations|violation|AW2007|512
+read-only-field|violation|AW3001|512
+multiple-constructors|violation|AW3002|512
+invalid-setter|violation|AW3003|512
+invalid-member-modifier|violation|AW3004|512
+invalid-builder|violation|AW3005|512
+builder-constructor-advisory|advisory|AW3005|512
+unsupported-java-type|violation|AW4001|512
+incompatible-accessor-types|violation|AW4002|512
+undeclared-recursion|violation|AW4003|512
+missing-union-id|violation|AW5001|512
+incomplete-union-construction|violation|AW5002|512
+required-union-field|violation|AW5003|512
+union-field-id-zero|violation|AW5004|512
+invalid-enum-value-method|violation|AW6001|512
+invalid-processor-option|always-error|AW9001|512
+exact-model-budget|always-error|AW9003|1

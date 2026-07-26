@@ -68,7 +68,7 @@ jobs:
         run: mvn --batch-mode --no-transfer-progress -Dswift.version=${{ matrix.swift }} clean verify
 
   maven-demo:
-    name: Runnable Maven demo / JDK 8
+    name: Maven demo case matrix / JDK 8
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -83,5 +83,5 @@ jobs:
           java-version: "8"
           cache: maven
 
-      - name: Run Maven demo
+      - name: Run Maven demo case matrix
         run: sh examples/maven/run-demo.sh

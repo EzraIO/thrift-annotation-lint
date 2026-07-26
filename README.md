@@ -314,11 +314,14 @@ sh examples/maven/run-demo.sh
 ```
 
 The script installs the current snapshot into the local Maven repository, then
-compiles an intentionally invalid Swift model twice. Warning mode completes and
-prints `AW2002`; strict mode rejects the same duplicate field ID as a compiler
-error. The script treats that strict-mode failure as the expected result. See
-[the example README](examples/maven/README.md) for the equivalent manual
-commands and expected diagnostic.
+compiles a catalog of valid and intentionally invalid Swift models. It verifies
+every runnable stable user-facing rule category in warning mode, demonstrates
+strict rejection for duplicate IDs, and checks the always-error option and
+exact-model-budget safeguards. AW9002 is the non-runnable internal safety net
+and is documented in the case catalog. Run
+`sh examples/maven/run-demo.sh --all-modes` to check every regular rule in
+both warning and strict mode. See [the example README](examples/maven/README.md)
+for the case catalog and equivalent manual commands.
 
 CI runs the default `0.23.1` suite on JDK 8, 11, 17, and 21, and runs the full
 suite for each exact Swift release in the compatibility matrix on JDK 8. The
