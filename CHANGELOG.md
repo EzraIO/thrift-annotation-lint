@@ -32,6 +32,7 @@ the project intends to use [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Apache-2.0 licensing and public GitHub repository metadata.
+- A runnable Maven demo that shows `AW2002` in both warning and strict modes.
 - Strict and warning validation modes.
 - Compile-time validation for Swift struct, union, enum, field, constructor, and
   builder metadata.

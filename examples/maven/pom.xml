@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.github.thriftannotationlint.examples</groupId>
+    <artifactId>thrift-annotation-lint-maven-demo</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>ThriftAnnotationLint Maven demo</name>
+    <description>Runnable compile-time demonstration for ThriftAnnotationLint.</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+        <swift.version>0.23.1</swift.version>
+        <thrift.annotation.lint.version>0.1.0-SNAPSHOT</thrift.annotation.lint.version>
+        <thrift.annotation.lint.mode>strict</thrift.annotation.lint.mode>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.facebook.swift</groupId>
+            <artifactId>swift-annotations</artifactId>
+            <version>${swift.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <showWarnings>true</showWarnings>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.github.thriftannotationlint</groupId>
+                            <artifactId>thrift-annotation-lint</artifactId>
+                            <version>${thrift.annotation.lint.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                    <compilerArgs>
+                        <arg>-Athrift.annotation.lint.mode=${thrift.annotation.lint.mode}</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>jdk9-or-newer</id>
+            <activation>
+                <jdk>[9,)</jdk>
+            </activation>
+            <properties>
+                <maven.compiler.release>8</maven.compiler.release>
+            </properties>
+        </profile>
+        <profile>
+            <id>warning</id>
+            <properties>
+                <thrift.annotation.lint.mode>warning</thrift.annotation.lint.mode>
+            </properties>
+        </profile>
+    </profiles>
+</project>
