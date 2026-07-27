@@ -7,14 +7,9 @@ import io.github.thriftannotationlint.internal.model.SwiftModel;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.ExecutableType;
-import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.TypeVariable;
-import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import java.util.LinkedHashSet;
@@ -24,10 +19,19 @@ import java.util.Set;
 public final class UnresolvedSymbolInspector {
     private final Elements elements;
     private final Types types;
+    private final IncompleteTypeGate incompleteTypeGate;
 
     public UnresolvedSymbolInspector(Elements elements, Types types) {
+        this(elements, types, new IncompleteTypeGate());
+    }
+
+    public UnresolvedSymbolInspector(
+            Elements elements,
+            Types types,
+            IncompleteTypeGate incompleteTypeGate) {
         this.elements = elements;
         this.types = types;
+        this.incompleteTypeGate = incompleteTypeGate;
     }
 
     public boolean hasUnresolvedSymbols(
@@ -35,7 +39,7 @@ public final class UnresolvedSymbolInspector {
             DeclaredType declaredType,
             SwiftModel.Kind kind,
             ThriftAnnotationDialect dialect) {
-        if (containsErrorType(declaredType, new LinkedHashSet<String>())
+        if (incompleteTypeGate.containsErrorType(declaredType)
                 || hasUnresolvedHierarchy(type, new LinkedHashSet<String>())) {
             return true;
         }
@@ -62,6 +66,10 @@ public final class UnresolvedSymbolInspector {
         return false;
     }
 
+    public void beginRound() {
+        incompleteTypeGate.beginRound();
+    }
+
     private boolean hasUnresolvedHierarchy(TypeElement type, Set<String> visited) {
         String name = type.getQualifiedName().toString();
         if ("java.lang.Object".equals(name) || !visited.add(name)) {
@@ -69,12 +77,12 @@ public final class UnresolvedSymbolInspector {
         }
         for (Element enclosed : type.getEnclosedElements()) {
             if (!(enclosed instanceof TypeElement)
-                    && containsErrorType(enclosed.asType(), new LinkedHashSet<String>())) {
+                    && incompleteTypeGate.containsErrorType(enclosed.asType())) {
                 return true;
             }
         }
         TypeMirror superclass = type.getSuperclass();
-        if (containsErrorType(superclass, new LinkedHashSet<String>())) {
+        if (incompleteTypeGate.containsErrorType(superclass)) {
             return true;
         }
         if (superclass.getKind() == TypeKind.DECLARED) {
@@ -85,7 +93,7 @@ public final class UnresolvedSymbolInspector {
             }
         }
         for (TypeMirror interfaceType : type.getInterfaces()) {
-            if (containsErrorType(interfaceType, new LinkedHashSet<String>())) {
+            if (incompleteTypeGate.containsErrorType(interfaceType)) {
                 return true;
             }
             if (interfaceType.getKind() == TypeKind.DECLARED) {
@@ -99,67 +107,4 @@ public final class UnresolvedSymbolInspector {
         return false;
     }
 
-    private boolean containsErrorType(TypeMirror type, Set<String> visiting) {
-        if (type == null || type.getKind() == TypeKind.NONE) {
-            return false;
-        }
-        if (type.getKind() == TypeKind.ERROR) {
-            return true;
-        }
-        String key = type.getKind() + ":" + type;
-        if (!visiting.add(key)) {
-            return false;
-        }
-        try {
-            if (type.getKind() == TypeKind.DECLARED) {
-                DeclaredType declared = (DeclaredType) type;
-                if (containsErrorType(declared.getEnclosingType(), visiting)) {
-                    return true;
-                }
-                for (TypeMirror argument : declared.getTypeArguments()) {
-                    if (containsErrorType(argument, visiting)) {
-                        return true;
-                    }
-                }
-            }
-            else if (type.getKind() == TypeKind.EXECUTABLE) {
-                ExecutableType executable = (ExecutableType) type;
-                if (containsErrorType(executable.getReturnType(), visiting)) {
-                    return true;
-                }
-                for (TypeMirror parameter : executable.getParameterTypes()) {
-                    if (containsErrorType(parameter, visiting)) {
-                        return true;
-                    }
-                }
-                for (TypeMirror thrown : executable.getThrownTypes()) {
-                    if (containsErrorType(thrown, visiting)) {
-                        return true;
-                    }
-                }
-            }
-            else if (type.getKind() == TypeKind.ARRAY) {
-                return containsErrorType(((ArrayType) type).getComponentType(), visiting);
-            }
-            else if (type.getKind() == TypeKind.TYPEVAR) {
-                return containsErrorType(((TypeVariable) type).getUpperBound(), visiting);
-            }
-            else if (type.getKind() == TypeKind.WILDCARD) {
-                WildcardType wildcard = (WildcardType) type;
-                return containsErrorType(wildcard.getExtendsBound(), visiting)
-                        || containsErrorType(wildcard.getSuperBound(), visiting);
-            }
-            else if (type.getKind() == TypeKind.INTERSECTION) {
-                for (TypeMirror bound : ((IntersectionType) type).getBounds()) {
-                    if (containsErrorType(bound, visiting)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        finally {
-            visiting.remove(key);
-        }
-    }
 }

@@ -12,6 +12,7 @@ import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
@@ -79,6 +80,26 @@ final class TypeSubsystemOwnerTest {
         assertEquals("java.lang.Integer", probe.mapKeyType);
         assertEquals(0, probe.rawMapArguments);
         assertTrue(probe.selfReferentialOwnerTerminated);
+    }
+
+    @Test
+    void hierarchyCacheSeparatesSameNamedVariablesFromDifferentMethods() {
+        HierarchyCacheProbe probe = new HierarchyCacheProbe();
+
+        CompilerTestSupport.CompilationResult result = compileWithAdditionalProcessor(
+                probe,
+                source("example.HierarchyCacheFixture",
+                        "package example;",
+                        "public class HierarchyCacheFixture {",
+                        "  public <T extends CharSequence> GenericList<T> first() { return null; }",
+                        "  public <T extends Number> GenericList<T> second() { return null; }",
+                        "  public static class GenericList<E> extends java.util.ArrayList<E> {}",
+                        "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+        assertEquals("java.lang.CharSequence", probe.firstBound);
+        assertEquals("java.lang.Number", probe.secondBound);
     }
 
     private abstract static class ProbeProcessor extends AbstractProcessor {
@@ -185,6 +206,42 @@ final class TypeSubsystemOwnerTest {
         }
     }
 
+    private static final class HierarchyCacheProbe extends ProbeProcessor {
+        private boolean inspected;
+        private String firstBound;
+        private String secondBound;
+
+        @Override
+        public boolean process(
+                Set<? extends TypeElement> annotations,
+                RoundEnvironment roundEnvironment) {
+            if (inspected || roundEnvironment.processingOver()) {
+                return false;
+            }
+            TypeElement fixture = processingEnv.getElementUtils()
+                    .getTypeElement("example.HierarchyCacheFixture");
+            if (fixture == null) {
+                return false;
+            }
+            inspected = true;
+            TypeHierarchyResolver resolver = new TypeHierarchyResolver(
+                    processingEnv.getTypeUtils());
+            TypeElement list = processingEnv.getElementUtils()
+                    .getTypeElement("java.util.List");
+            firstBound = firstTypeArgumentBound(resolver.asSupertype(
+                    (DeclaredType) method(fixture, "first").getReturnType(), list));
+            secondBound = firstTypeArgumentBound(resolver.asSupertype(
+                    (DeclaredType) method(fixture, "second").getReturnType(), list));
+            return false;
+        }
+
+        private String firstTypeArgumentBound(DeclaredType type) {
+            TypeMirror argument = type.getTypeArguments().get(0);
+            return ((javax.lang.model.type.TypeVariable) argument)
+                    .getUpperBound().toString();
+        }
+    }
+
     private static Types rejectDirectSupertypes(final Types delegate) {
         return proxy(Types.class, new InvocationHandler() {
             @Override
@@ -240,6 +297,16 @@ final class TypeSubsystemOwnerTest {
             }
         }
         throw new AssertionError("Missing field " + type + "." + name);
+    }
+
+    private static ExecutableElement method(TypeElement type, String name) {
+        for (Element element : type.getEnclosedElements()) {
+            if (element.getKind() == ElementKind.METHOD
+                    && element.getSimpleName().contentEquals(name)) {
+                return (ExecutableElement) element;
+            }
+        }
+        throw new AssertionError("Missing method " + type + "." + name);
     }
 
 }

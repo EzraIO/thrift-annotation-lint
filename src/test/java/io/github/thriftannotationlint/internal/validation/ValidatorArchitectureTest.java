@@ -1,6 +1,5 @@
 package io.github.thriftannotationlint.internal.validation;
 
-import io.github.thriftannotationlint.internal.extract.LogicalFieldResolver;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.ThriftFieldData;

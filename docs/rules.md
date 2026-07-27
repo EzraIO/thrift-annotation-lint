@@ -38,7 +38,7 @@ meaning of a code.
 | `AW5002` | A union constructor is invalid or does not deterministically cover every variant. |
 | `AW5003` | A union field has invalid requiredness. |
 | `AW5004` | A union payload uses unsafe field ID `0`, which is the default codec's no-field discriminator. |
-| `AW6001` | A Thrift enum value method has an invalid signature. |
+| `AW6001` | A Thrift enum value method is missing where Drift requires it, is duplicated, or has an invalid signature. |
 | `AW6002` | A Drift enum declares multiple `@ThriftEnumUnknownValue` fallback constants. |
 | `AW9001` | A processor option is invalid. |
 | `AW9002` | An unexpected processor failure prevented reliable validation. |
@@ -132,3 +132,13 @@ ThriftAnnotationLint also inspects source enums without direct Swift annotations
 enum can inherit `@ThriftEnumValue` from a classpath interface. The processor
 does not claim unrelated annotations and takes a fast no-op path for ordinary
 non-enum source compilations.
+
+Unannotated enums inherit the referencing model's dialect. Drift requires exactly
+one valid `@ThriftEnumValue` method, while Swift permits zero or one. The same
+plain enum may therefore be validated independently for both dialects. Explicit
+cross-dialect struct, union, or enum references are rejected with `AW1001`.
+
+Drift supports `Optional<T>`, `OptionalInt`, `OptionalLong`, and
+`OptionalDouble`; generic elements are validated recursively and normalized to
+their element wire type. Raw Optional and unsupported elements use `AW4001`.
+Swift Optional fields remain unsupported.

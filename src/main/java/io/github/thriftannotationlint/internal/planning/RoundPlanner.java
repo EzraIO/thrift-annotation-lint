@@ -5,9 +5,10 @@ import io.github.thriftannotationlint.internal.diagnostic.Finding;
 import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import io.github.thriftannotationlint.internal.extract.SwiftModelClassifier;
+import io.github.thriftannotationlint.internal.extract.SwiftMemberResolver;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 import io.github.thriftannotationlint.internal.model.ElementNames;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -84,21 +85,41 @@ public final class RoundPlanner {
 
     private final ProcessingEnvironment processingEnvironment;
     private final CompilationState state;
-    private final SwiftTypeInspector typeInspector;
+    private final ThriftTypeInspector typeInspector;
     private final SwiftModelClassifier modelClassifier;
     private final DemandClosure demandClosure;
+    private final SwiftMemberResolver memberResolver;
 
     public RoundPlanner(
             ProcessingEnvironment processingEnvironment,
             CompilationState state,
-            SwiftTypeInspector typeInspector,
+            ThriftTypeInspector typeInspector,
             SwiftModelClassifier modelClassifier,
             DemandClosure demandClosure) {
+        this(
+                processingEnvironment,
+                state,
+                typeInspector,
+                modelClassifier,
+                demandClosure,
+                new SwiftMemberResolver(
+                        processingEnvironment.getElementUtils(),
+                        processingEnvironment.getTypeUtils()));
+    }
+
+    public RoundPlanner(
+            ProcessingEnvironment processingEnvironment,
+            CompilationState state,
+            ThriftTypeInspector typeInspector,
+            SwiftModelClassifier modelClassifier,
+            DemandClosure demandClosure,
+            SwiftMemberResolver memberResolver) {
         this.processingEnvironment = processingEnvironment;
         this.state = state;
         this.typeInspector = typeInspector;
         this.modelClassifier = modelClassifier;
         this.demandClosure = demandClosure;
+        this.memberResolver = memberResolver;
     }
 
     public boolean isRelevant(
@@ -114,8 +135,10 @@ public final class RoundPlanner {
     }
 
     public Plan plan(RoundEnvironment roundEnvironment) {
+        memberResolver.beginRound();
+        typeInspector.beginRound();
         CompilationState.RoundStart roundStart = state.beginActiveRound();
-        Map<String, SwiftModel.Kind> previousPendingModels =
+        Map<String, ModelRegistration> previousPendingModels =
                 roundStart.previousPendingModels();
         boolean rebuildDemandClosure = roundStart.rebuildDemandClosure();
 
@@ -133,18 +156,21 @@ public final class RoundPlanner {
                     roundEnvironment,
                     dialect.thriftStruct(),
                     SwiftModel.Kind.STRUCT,
+                    dialect,
                     candidates,
                     containerRoots);
             addAnnotatedTypes(
                     roundEnvironment,
                     dialect.thriftUnion(),
                     SwiftModel.Kind.UNION,
+                    dialect,
                     candidates,
                     containerRoots);
             addAnnotatedTypes(
                     roundEnvironment,
                     dialect.thriftEnum(),
                     SwiftModel.Kind.ENUM,
+                    dialect,
                     candidates,
                     containerRoots);
         }
@@ -181,7 +207,8 @@ public final class RoundPlanner {
             state.registerSourceModel(
                     sourceName,
                     candidate.kind,
-                    candidate.identity);
+                    candidate.dialect,
+                    candidate.cacheKey());
         }
 
         Element roundAnchor = firstRootElement(roundEnvironment);
@@ -237,7 +264,8 @@ public final class RoundPlanner {
         for (Element annotated : roundEnvironment.getElementsAnnotatedWith(annotation)) {
             Element owner = annotated.getEnclosingElement();
             if (owner instanceof TypeElement && owner.getKind() == ElementKind.ENUM) {
-                addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, candidates);
+                addCandidate(
+                        (TypeElement) owner, SwiftModel.Kind.ENUM, dialect, candidates);
             }
         }
     }
@@ -302,6 +330,7 @@ public final class RoundPlanner {
             RoundEnvironment roundEnvironment,
             String annotationName,
             SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect,
             Map<String, ModelDemand> candidates,
             Map<String, ContainerDemand> containerRoots) {
         TypeElement annotation = element(annotationName);
@@ -316,18 +345,20 @@ public final class RoundPlanner {
             String typeName = type.getQualifiedName().toString();
             TypeMirror containerType = typeInspector.containerClassificationType(type);
             if (type.getKind() == ElementKind.ENUM) {
-                addCandidate(type, SwiftModel.Kind.ENUM, candidates);
+                addCandidate(type, SwiftModel.Kind.ENUM, dialect, candidates);
             }
             else if ((kind == SwiftModel.Kind.STRUCT || kind == SwiftModel.Kind.UNION)
                     && containerType != null) {
                 String identity = typeInspector.exactJavaTypeIdentity(type.asType());
-                if (!state.migrateSourceModelToContainer(typeName, identity)) {
-                    state.registerSourceContainer(typeName);
+                String cacheKey = dialect.name() + "\u0000" + identity;
+                if (!state.migrateSourceModelToContainer(typeName, dialect, cacheKey)) {
+                    state.registerSourceContainer(typeName, dialect);
                 }
-                containerRoots.put(typeName, new ContainerDemand(type, containerType));
+                containerRoots.put(typeName, new ContainerDemand(
+                        type, containerType, dialect));
             }
             else {
-                addCandidate(type, kind, candidates);
+                addCandidate(type, kind, dialect, candidates);
             }
         }
     }
@@ -335,17 +366,18 @@ public final class RoundPlanner {
     private void reclassifyPendingContainerTypes(
             Map<String, ModelDemand> candidates,
             Map<String, ContainerDemand> containerRoots,
-            Map<String, SwiftModel.Kind> previousPendingModels) {
-        List<Map.Entry<String, SwiftModel.Kind>> knownModels =
-                new ArrayList<Map.Entry<String, SwiftModel.Kind>>(
+            Map<String, ModelRegistration> previousPendingModels) {
+        List<Map.Entry<String, ModelRegistration>> knownModels =
+                new ArrayList<Map.Entry<String, ModelRegistration>>(
                         state.historicalSourceModels().entrySet());
-        for (Map.Entry<String, SwiftModel.Kind> entry : knownModels) {
+        for (Map.Entry<String, ModelRegistration> entry : knownModels) {
+            ModelRegistration registration = entry.getValue();
             if (!previousPendingModels.containsKey(entry.getKey())
-                    || (entry.getValue() != SwiftModel.Kind.STRUCT
-                    && entry.getValue() != SwiftModel.Kind.UNION)) {
+                    || (entry.getValue().kind != SwiftModel.Kind.STRUCT
+                    && entry.getValue().kind != SwiftModel.Kind.UNION)) {
                 continue;
             }
-            String typeName = entry.getKey();
+            String typeName = registration.typeName;
             TypeElement type = element(typeName);
             if (type == null) {
                 continue;
@@ -355,17 +387,23 @@ public final class RoundPlanner {
                 continue;
             }
             String identity = typeInspector.exactJavaTypeIdentity(type.asType());
-            candidates.remove(typeName);
-            if (!state.migrateSourceModelToContainer(typeName, identity)) {
+            String cacheKey = entry.getValue().dialect.name() + "\u0000" + identity;
+            candidates.remove(candidateKey(
+                    type, registration.kind, registration.dialect));
+            if (!state.migrateSourceModelToContainer(
+                    typeName, registration.dialect, cacheKey)) {
                 continue;
             }
-            containerRoots.put(typeName, new ContainerDemand(type, containerType));
+            containerRoots.put(typeName, new ContainerDemand(
+                    type, containerType, entry.getValue().dialect));
         }
     }
 
     private void addHistoricalContainerRoots(
             Map<String, ContainerDemand> containerRoots) {
-        for (String containerRootName : state.historicalSourceContainers()) {
+        for (Map.Entry<String, ThriftAnnotationDialect> historical
+                : state.historicalSourceContainers().entrySet()) {
+            String containerRootName = historical.getKey();
             if (containerRoots.containsKey(containerRootName)) {
                 continue;
             }
@@ -375,7 +413,8 @@ public final class RoundPlanner {
             if (containerRoot != null && containerType != null) {
                 containerRoots.put(
                         containerRootName,
-                        new ContainerDemand(containerRoot, containerType));
+                        new ContainerDemand(
+                                containerRoot, containerType, historical.getValue()));
             }
         }
     }
@@ -384,12 +423,15 @@ public final class RoundPlanner {
             Map<String, ModelDemand> currentCandidates,
             List<ModelDemand> orderedModels,
             Element roundAnchor) {
-        for (Map.Entry<String, SwiftModel.Kind> source
+        for (Map.Entry<String, ModelRegistration> source
                 : state.historicalSourceModels().entrySet()) {
-            if (currentCandidates.containsKey(source.getKey())) {
+            ModelRegistration registration = source.getValue();
+            String typeName = registration.typeName;
+            TypeElement type = element(typeName);
+            if (type != null && currentCandidates.containsKey(candidateKey(
+                    type, registration.kind, registration.dialect))) {
                 continue;
             }
-            TypeElement type = element(source.getKey());
             if (type == null || type.asType().getKind() != TypeKind.DECLARED) {
                 continue;
             }
@@ -398,9 +440,10 @@ public final class RoundPlanner {
                     (DeclaredType) type.asType(),
                     type.asType(),
                     typeInspector.exactJavaTypeIdentity(type.asType()),
-                    source.getValue(),
+                    registration.dialect,
+                    registration.kind,
                     roundAnchor,
-                    demandClosure.initialPath(source.getKey(), type.asType()),
+                    demandClosure.initialPath(typeName, type.asType()),
                     true));
         }
     }
@@ -417,6 +460,7 @@ public final class RoundPlanner {
                     candidate.declaredType,
                     candidate.requestedType,
                     candidate.identity,
+                    candidate.dialect,
                     candidate.kind,
                     candidate.diagnosticAnchor,
                     candidate.path,
@@ -437,7 +481,7 @@ public final class RoundPlanner {
             for (Element annotated : roundEnvironment.getElementsAnnotatedWith(annotation)) {
                 Element owner = annotated.getEnclosingElement();
                 if (owner instanceof TypeElement && owner.getKind() == ElementKind.ENUM) {
-                    addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, candidates);
+                    addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, dialect, candidates);
                 }
                 else if (owner instanceof TypeElement && !owner.getKind().isInterface()) {
                     findings.add(Finding.error(
@@ -460,11 +504,10 @@ public final class RoundPlanner {
         if (element instanceof TypeElement && element.getKind() == ElementKind.ENUM) {
             TypeElement enumType = (TypeElement) element;
             for (ExecutableElement method : ElementFilter.methodsIn(
-                    processingEnvironment.getElementUtils().getAllMembers(enumType))) {
+                    memberResolver.allMembers(enumType))) {
                 for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
                     if (ThriftAnnotations.has(method, dialect.thriftEnumValue())) {
-                        addCandidate(enumType, SwiftModel.Kind.ENUM, candidates);
-                        return;
+                        addCandidate(enumType, SwiftModel.Kind.ENUM, dialect, candidates);
                     }
                 }
             }
@@ -479,21 +522,36 @@ public final class RoundPlanner {
     private void addCandidate(
             TypeElement type,
             SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect,
             Map<String, ModelDemand> candidates) {
-        String typeName = type.getQualifiedName().toString();
-        ModelDemand existing = candidates.get(typeName);
+        String key = candidateKey(type, kind, dialect);
+        ModelDemand existing = candidates.get(key);
         if (existing == null
                 || modelClassifier.priority(kind) < modelClassifier.priority(existing.kind)) {
-            candidates.put(typeName, new ModelDemand(
+            String typeName = type.getQualifiedName().toString();
+            candidates.put(key, new ModelDemand(
                     type,
                     (DeclaredType) type.asType(),
                     type.asType(),
                     typeInspector.exactJavaTypeIdentity(type.asType()),
+                    dialect,
                     kind,
                     null,
                     demandClosure.initialPath(typeName, type.asType()),
                     false));
         }
+    }
+
+    private String candidateKey(
+            TypeElement type,
+            SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect) {
+        String typeName = type.getQualifiedName().toString();
+        boolean independentPlainEnum = kind == SwiftModel.Kind.ENUM
+                && ThriftAnnotations.dialectFor(type, kind) == null;
+        return independentPlainEnum
+                ? ModelRegistration.key(typeName, dialect)
+                : typeName;
     }
 
     private void collectCompilationTypes(Element element) {

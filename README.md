@@ -283,6 +283,17 @@ claimed as verified. Drift model discovery, fields, constructors, builders, unio
 enums, IDL annotations, and shared Java type rules are supported. One model must use
 one annotation dialect consistently; mixing `com.facebook.swift.codec.*` and
 `io.airlift.drift.annotations.*` annotations is rejected.
+Drift enums must expose exactly one valid `@ThriftEnumValue` method; Swift enums
+continue to allow zero or one. An unannotated Java enum inherits the dialect of
+the model that references it and is validated independently when reached from
+both dialects. An explicitly annotated Swift model cannot be referenced by a
+Drift model (or vice versa); this is reported as `AW1001` at the reference site.
+
+Drift fields support `Optional<T>`, `OptionalInt`, `OptionalLong`, and
+`OptionalDouble`. Generic Optional elements are checked recursively, including
+nested containers and models, and normalize to the element wire type. Raw
+`Optional` and unsupported element types remain `AW4001`. Optional types are not
+accepted for Facebook Swift models.
 
 ## Compile-time and runtime boundary
 

@@ -21,26 +21,68 @@ import java.util.Set;
 /** Resolves instantiated supertypes without relying on compiler-internal APIs. */
 final class TypeHierarchyResolver {
     private final Types types;
+    private final JavaTypeIdentityFormatter identityFormatter;
+    private final TypeInspectionMetrics metrics;
+    private final Map<String, DeclaredType> roundCache =
+            new LinkedHashMap<String, DeclaredType>();
+    private final Set<String> roundMisses = new HashSet<String>();
 
     TypeHierarchyResolver(Types types) {
+        this(types, new JavaTypeIdentityFormatter(), null);
+    }
+
+    TypeHierarchyResolver(Types types, TypeInspectionMetrics metrics) {
+        this(types, new JavaTypeIdentityFormatter(), metrics);
+    }
+
+    TypeHierarchyResolver(
+            Types types,
+            JavaTypeIdentityFormatter identityFormatter,
+            TypeInspectionMetrics metrics) {
         this.types = types;
+        this.identityFormatter = identityFormatter;
+        this.metrics = metrics;
+    }
+
+    void beginRound() {
+        roundCache.clear();
+        roundMisses.clear();
     }
 
     DeclaredType asSupertype(DeclaredType candidate, TypeElement target) {
+        String candidateIdentity = identityFormatter.exactJavaTypeIdentity(candidate);
+        String cacheKey = target == null
+                ? candidateIdentity + "-><missing>"
+                : candidateIdentity + "->" + target.getQualifiedName();
+        DeclaredType cached = roundCache.get(cacheKey);
+        if (cached != null || roundMisses.contains(cacheKey)) {
+            return cached;
+        }
+        if (metrics != null) {
+            metrics.hierarchyLookup();
+        }
         DeclaredType match = asSupertypeFromMirrors(
                 candidate, target, new HashSet<String>());
         if (match != null) {
+            roundCache.put(cacheKey, match);
             return match;
         }
         try {
-            return asSupertypeFromElements(
+            match = asSupertypeFromElements(
                     candidate, target, new HashSet<String>());
         }
         catch (RuntimeException incompleteSymbol) {
             // javac 8 can expose half-completed TypeVariableSymbols while another processor is
             // generating their owner. The next round rebuilds historical roots with fresh state.
-            return null;
+            match = null;
         }
+        if (match == null) {
+            roundMisses.add(cacheKey);
+        }
+        else {
+            roundCache.put(cacheKey, match);
+        }
+        return match;
     }
 
     private DeclaredType asSupertypeFromMirrors(

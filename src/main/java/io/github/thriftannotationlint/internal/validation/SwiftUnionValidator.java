@@ -2,7 +2,7 @@ package io.github.thriftannotationlint.internal.validation;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
-import io.github.thriftannotationlint.internal.extract.SwiftMemberNames;
+import io.github.thriftannotationlint.internal.model.SwiftMemberNames;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.SwiftModel;

@@ -8,8 +8,9 @@ import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 import io.github.thriftannotationlint.internal.types.UnresolvedSymbolInspector;
+import io.github.thriftannotationlint.internal.types.IncompleteTypeGate;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -35,18 +36,35 @@ public final class SwiftModelExtractor {
     private final SwiftConstructionExtractor constructionExtractor;
     private final SwiftUnionMetadataExtractor unionMetadataExtractor;
     private final SwiftEnumMetadataExtractor enumMetadataExtractor;
+    private final SwiftMemberResolver memberResolver;
 
     public SwiftModelExtractor(
             ProcessingEnvironment processingEnvironment,
-            SwiftTypeInspector typeInspector) {
+            ThriftTypeInspector typeInspector,
+            IncompleteTypeGate incompleteTypeGate) {
+        this(
+                processingEnvironment,
+                typeInspector,
+                incompleteTypeGate,
+                new SwiftMemberResolver(
+                        processingEnvironment.getElementUtils(),
+                        processingEnvironment.getTypeUtils()));
+    }
+
+    public SwiftModelExtractor(
+            ProcessingEnvironment processingEnvironment,
+            ThriftTypeInspector typeInspector,
+            IncompleteTypeGate incompleteTypeGate,
+            SwiftMemberResolver memberResolver) {
         this.elements = processingEnvironment.getElementUtils();
         Types types = processingEnvironment.getTypeUtils();
 
-        SwiftMemberResolver memberResolver = new SwiftMemberResolver(elements, types);
+        this.memberResolver = memberResolver;
         ThriftParameterNameResolver parameterNameResolver = new ThriftParameterNameResolver(
                 elements,
                 new ClasspathParameterNames(processingEnvironment));
-        this.unresolvedSymbolInspector = new UnresolvedSymbolInspector(elements, types);
+        this.unresolvedSymbolInspector = new UnresolvedSymbolInspector(
+                elements, types, incompleteTypeGate);
         this.fieldPartExtractor = new SwiftFieldPartExtractor(
                 elements, memberResolver, parameterNameResolver);
         this.constructionExtractor = new SwiftConstructionExtractor(
@@ -56,22 +74,28 @@ public final class SwiftModelExtractor {
                 elements, types, memberResolver);
     }
 
+    public void beginRound() {
+        memberResolver.beginRound();
+        unresolvedSymbolInspector.beginRound();
+    }
+
     public ExtractionResult extract(
             DeclaredType declaredType,
             SwiftModel.Kind kind,
             String modelIdentity,
+            String cacheKey,
+            ThriftAnnotationDialect dialect,
             Set<String> roundCompilationTypes) {
         Element declaredElement = declaredType.asElement();
         if (!(declaredElement instanceof TypeElement)) {
             throw new IllegalArgumentException("Thrift model type must be declared");
         }
         TypeElement type = (TypeElement) declaredElement;
-        ThriftAnnotationDialect dialect = modelDialect(type, kind);
         boolean unresolvedSymbols = unresolvedSymbolInspector.hasUnresolvedSymbols(
                 type, declaredType, kind, dialect);
         List<Finding> findings = new ArrayList<Finding>();
-        validateModelDeclaration(type, kind, findings);
-        validateAnnotationDialect(type, dialect, findings);
+        validateModelDeclaration(type, kind, dialect, findings);
+        validateAnnotationDialect(type, kind, dialect, findings);
 
         if (kind == SwiftModel.Kind.ENUM) {
             List<ExecutableElement> enumMethods = enumMetadataExtractor.extract(
@@ -82,6 +106,8 @@ public final class SwiftModelExtractor {
                             type,
                             declaredType,
                             modelIdentity,
+                            cacheKey,
+                            dialect,
                             null,
                             Collections.<FieldPart>emptyList(),
                             Collections.<ExecutableElement>emptyList(),
@@ -192,6 +218,8 @@ public final class SwiftModelExtractor {
                         type,
                         declaredType,
                         modelIdentity,
+                        cacheKey,
+                        dialect,
                         builder,
                         parts,
                         constructionExecutables,
@@ -204,6 +232,7 @@ public final class SwiftModelExtractor {
     private void validateModelDeclaration(
             TypeElement type,
             SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         if (!type.getModifiers().contains(Modifier.PUBLIC)) {
             findings.add(Finding.error(
@@ -224,7 +253,7 @@ public final class SwiftModelExtractor {
         if (kind == SwiftModel.Kind.ENUM) {
             if (type.getKind() != ElementKind.ENUM) {
                 String annotation = ThriftAnnotations.has(
-                        type, modelDialect(type, kind).thriftEnum())
+                        type, dialect.thriftEnum())
                         ? "@ThriftEnum"
                         : "@ThriftEnumValue";
                 findings.add(Finding.error(
@@ -244,11 +273,14 @@ public final class SwiftModelExtractor {
 
     private void validateAnnotationDialect(
             TypeElement type,
+            SwiftModel.Kind kind,
             ThriftAnnotationDialect dialect,
             List<Finding> findings) {
+        boolean inheritedPlainEnumDialect = kind == SwiftModel.Kind.ENUM
+                && ThriftAnnotations.dialectFor(type, kind) == null;
         List<Element> elementsToCheck = new ArrayList<Element>();
         elementsToCheck.add(type);
-        elementsToCheck.addAll(elements.getAllMembers(type));
+        elementsToCheck.addAll(memberResolver.allMembers(type));
         for (Element element : elementsToCheck) {
             for (AnnotationMirror annotation : element.getAnnotationMirrors()) {
                 Element annotationElement = annotation.getAnnotationType().asElement();
@@ -259,6 +291,13 @@ public final class SwiftModelExtractor {
                         .getQualifiedName().toString();
                 if (ThriftAnnotations.isSupportedAnnotation(annotationName)
                         && !dialect.ownsAnnotation(annotationName)) {
+                    if (inheritedPlainEnumDialect
+                            && (annotationName.endsWith(".ThriftEnumValue")
+                            || annotationName.endsWith(".ThriftEnumUnknownValue"))) {
+                        // A plain Java enum may be reached and cached independently by both
+                        // runtimes. Each extractor consumes only its own enum metadata.
+                        continue;
+                    }
                     findings.add(Finding.error(
                             DiagnosticCode.MODEL_DECLARATION,
                             element,
@@ -270,33 +309,6 @@ public final class SwiftModelExtractor {
                 }
             }
         }
-    }
-
-    private ThriftAnnotationDialect modelDialect(
-            TypeElement type,
-            SwiftModel.Kind kind) {
-        ThriftAnnotationDialect dialect = ThriftAnnotations.dialectFor(type, kind);
-        if (dialect != null) {
-            return dialect;
-        }
-        if (kind == SwiftModel.Kind.ENUM) {
-            for (ThriftAnnotationDialect candidate : ThriftAnnotationDialect.values()) {
-                for (Element member : elements.getAllMembers(type)) {
-                    if (ThriftAnnotations.has(member, candidate.thriftEnumValue())
-                            || (candidate.thriftEnumUnknownValue() != null
-                            && ThriftAnnotations.has(
-                                    member, candidate.thriftEnumUnknownValue()))) {
-                        return candidate;
-                    }
-                }
-            }
-        }
-        for (ThriftAnnotationDialect candidate : ThriftAnnotationDialect.values()) {
-            if (elements.getTypeElement(candidate.modelAnnotation(kind)) != null) {
-                return candidate;
-            }
-        }
-        return ThriftAnnotationDialect.FACEBOOK_SWIFT;
     }
 
     private void validateIdlAnnotations(

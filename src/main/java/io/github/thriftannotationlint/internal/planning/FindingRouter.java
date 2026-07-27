@@ -80,7 +80,7 @@ final class FindingRouter {
                 continue;
             }
             String owner = owningTypeName(finding.element());
-            if (owner != null && currentCandidates.containsKey(owner)) {
+            if (owner != null && containsCandidateOwner(currentCandidates, owner)) {
                 destination.add(finding);
                 continue;
             }
@@ -111,5 +111,16 @@ final class FindingRouter {
         return current instanceof TypeElement
                 ? ((TypeElement) current).getQualifiedName().toString()
                 : null;
+    }
+
+    private boolean containsCandidateOwner(
+            Map<String, ModelDemand> candidates,
+            String owner) {
+        for (ModelDemand candidate : candidates.values()) {
+            if (candidate.type().getQualifiedName().contentEquals(owner)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

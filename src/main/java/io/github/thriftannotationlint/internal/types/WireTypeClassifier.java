@@ -17,10 +17,12 @@ import javax.lang.model.util.Elements;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /** Applies Facebook Swift's declaration-type classification order. */
-final class SwiftCatalogTypeClassifier {
+final class WireTypeClassifier {
     enum Kind {
         BOXED,
         STRING,
@@ -29,6 +31,7 @@ final class SwiftCatalogTypeClassifier {
         MAP,
         SET,
         LIST,
+        OPTIONAL,
         STRUCT,
         UNION,
         UNKNOWN
@@ -56,22 +59,47 @@ final class SwiftCatalogTypeClassifier {
     private final TypeElement mapType;
     private final TypeElement setType;
     private final TypeElement iterableType;
+    private final TypeElement optionalType;
+    private final TypeInspectionMetrics metrics;
+    private final DialectTypePolicy dialectPolicy = new DialectTypePolicy();
+    private final Map<String, CatalogType> roundClassifications =
+            new LinkedHashMap<String, CatalogType>();
 
-    SwiftCatalogTypeClassifier(
+    WireTypeClassifier(
             Elements elements,
             TypeHierarchyResolver hierarchyResolver,
             JavaTypeIdentityFormatter identityFormatter) {
+        this(elements, hierarchyResolver, identityFormatter, null);
+    }
+
+    WireTypeClassifier(
+            Elements elements,
+            TypeHierarchyResolver hierarchyResolver,
+            JavaTypeIdentityFormatter identityFormatter,
+            TypeInspectionMetrics metrics) {
         this.hierarchyResolver = hierarchyResolver;
         this.identityFormatter = identityFormatter;
+        this.metrics = metrics;
         this.byteBufferType = elements.getTypeElement("java.nio.ByteBuffer");
         this.listType = elements.getTypeElement("java.util.List");
         this.mapType = elements.getTypeElement("java.util.Map");
         this.setType = elements.getTypeElement("java.util.Set");
         this.iterableType = elements.getTypeElement("java.lang.Iterable");
+        this.optionalType = elements.getTypeElement("java.util.Optional");
+    }
+
+    void beginRound() {
+        roundClassifications.clear();
+        hierarchyResolver.beginRound();
     }
 
     boolean isSupported(TypeMirror type) {
-        return isSupported(type, new HashSet<String>());
+        return isSupported(
+                type, ThriftAnnotationDialect.FACEBOOK_SWIFT, new HashSet<String>());
+    }
+
+    boolean isSupported(TypeMirror type, ThriftAnnotationDialect dialect) {
+        return isSupported(type, dialect, new HashSet<String>());
     }
 
     /**
@@ -80,7 +108,19 @@ final class SwiftCatalogTypeClassifier {
      * coerced scalar types (for example {@code int} and {@code Integer}) remain distinct.
      */
     String normalizedType(TypeMirror type) {
-        return normalizedType(type, new HashSet<String>(), false);
+        return normalizedType(
+                type,
+                ThriftAnnotationDialect.FACEBOOK_SWIFT,
+                new HashSet<String>(),
+                false);
+    }
+
+    String normalizedType(TypeMirror type, ThriftAnnotationDialect dialect) {
+        return normalizedType(type, dialect, new HashSet<String>(), false);
+    }
+
+    String carrierShape(TypeMirror type, ThriftAnnotationDialect dialect) {
+        return carrierShape(type, dialect, new HashSet<String>());
     }
 
     boolean isContainerType(TypeMirror type) {
@@ -112,7 +152,44 @@ final class SwiftCatalogTypeClassifier {
         return result;
     }
 
+    List<TypeMirror> nestedWireTypeArguments(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect) {
+        List<TypeMirror> result = new ArrayList<TypeMirror>();
+        if (type == null || type.getKind() != TypeKind.DECLARED) {
+            return result;
+        }
+        CatalogType catalogType = classify((DeclaredType) type, dialect);
+        if (isContainerKind(catalogType.kind) || catalogType.kind == Kind.OPTIONAL) {
+            result.addAll(catalogType.view.getTypeArguments());
+        }
+        return result;
+    }
+
     CatalogType classify(DeclaredType declaredType) {
+        return classify(declaredType, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+    }
+
+    CatalogType classify(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect) {
+        String cacheKey = dialect.name() + "\u0000"
+                + identityFormatter.exactJavaTypeIdentity(declaredType);
+        CatalogType cached = roundClassifications.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        CatalogType result = classifyUncached(declaredType, dialect);
+        roundClassifications.put(cacheKey, result);
+        if (metrics != null) {
+            metrics.classification();
+        }
+        return result;
+    }
+
+    private CatalogType classifyUncached(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect) {
         Element declaredElement = declaredType.asElement();
         if (!(declaredElement instanceof TypeElement)) {
             return new CatalogType(Kind.UNKNOWN, null, null);
@@ -127,6 +204,17 @@ final class SwiftCatalogTypeClassifier {
         }
         if ("java.lang.String".equals(typeName)) {
             return new CatalogType(Kind.STRING, declaredType, typeName);
+        }
+        if (dialectPolicy.supportsOptional(dialect)) {
+            if ("java.util.OptionalInt".equals(typeName)) {
+                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Integer");
+            }
+            if ("java.util.OptionalLong".equals(typeName)) {
+                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Long");
+            }
+            if ("java.util.OptionalDouble".equals(typeName)) {
+                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Double");
+            }
         }
 
         // Keep this precedence aligned with ThriftCatalog.buildThriftTypeInternal().
@@ -149,12 +237,25 @@ final class SwiftCatalogTypeClassifier {
         if (view != null) {
             return new CatalogType(Kind.LIST, view, typeName);
         }
-        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
-            if (ThriftAnnotations.has(typeElement, dialect.thriftStruct())) {
-                return new CatalogType(Kind.STRUCT, declaredType, typeName);
+        if (dialectPolicy.supportsOptional(dialect)) {
+            view = hierarchyResolver.asSupertype(declaredType, optionalType);
+            if (view != null) {
+                return new CatalogType(Kind.OPTIONAL, view, typeName);
             }
-            if (ThriftAnnotations.has(typeElement, dialect.thriftUnion())) {
-                return new CatalogType(Kind.UNION, declaredType, typeName);
+        }
+        if (ThriftAnnotations.has(typeElement, dialect.thriftStruct())) {
+            return new CatalogType(Kind.STRUCT, declaredType, typeName);
+        }
+        if (ThriftAnnotations.has(typeElement, dialect.thriftUnion())) {
+            return new CatalogType(Kind.UNION, declaredType, typeName);
+        }
+        // Reference validation owns the clearer AW1001 dialect-conflict diagnostic. Classify an
+        // explicitly foreign model as a wire model here so it does not also produce AW4001.
+        for (ThriftAnnotationDialect other : ThriftAnnotationDialect.values()) {
+            if (other != dialect
+                    && (ThriftAnnotations.has(typeElement, other.thriftStruct())
+                    || ThriftAnnotations.has(typeElement, other.thriftUnion()))) {
+                return new CatalogType(Kind.STRUCT, declaredType, typeName);
             }
         }
         return new CatalogType(Kind.UNKNOWN, null, typeName);
@@ -180,7 +281,10 @@ final class SwiftCatalogTypeClassifier {
         return listType;
     }
 
-    private boolean isSupported(TypeMirror type, Set<String> visiting) {
+    private boolean isSupported(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect,
+            Set<String> visiting) {
         if (type == null) {
             return false;
         }
@@ -205,16 +309,16 @@ final class SwiftCatalogTypeClassifier {
             // Guava TypeToken uses its first upper bound as the raw type, so an unbounded variable
             // resolves to Object (unsupported) while a supported explicit bound can be encoded.
             TypeMirror upperBound = ((TypeVariable) type).getUpperBound();
-            return upperBound != null && isSupported(upperBound, visiting);
+            return upperBound != null && isSupported(upperBound, dialect, visiting);
         }
         if (type.getKind() == TypeKind.WILDCARD) {
             WildcardType wildcard = (WildcardType) type;
             TypeMirror upperBound = wildcard.getExtendsBound();
-            return upperBound != null && isSupported(upperBound, visiting);
+            return upperBound != null && isSupported(upperBound, dialect, visiting);
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
             List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return !bounds.isEmpty() && isSupported(bounds.get(0), visiting);
+            return !bounds.isEmpty() && isSupported(bounds.get(0), dialect, visiting);
         }
         if (type.getKind() != TypeKind.DECLARED) {
             return false;
@@ -225,7 +329,7 @@ final class SwiftCatalogTypeClassifier {
             return false;
         }
         try {
-            CatalogType catalogType = classify((DeclaredType) type);
+            CatalogType catalogType = classify((DeclaredType) type, dialect);
             if (catalogType.kind == Kind.BOXED
                     || catalogType.kind == Kind.STRING
                     || catalogType.kind == Kind.BINARY
@@ -233,6 +337,14 @@ final class SwiftCatalogTypeClassifier {
                     || catalogType.kind == Kind.STRUCT
                     || catalogType.kind == Kind.UNION) {
                 return true;
+            }
+            if (catalogType.kind == Kind.OPTIONAL) {
+                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
+                if (arguments.isEmpty()) {
+                    return !catalogType.typeName.startsWith("java.util.Optional");
+                }
+                return arguments.size() == 1
+                        && isSupported(arguments.get(0), dialect, visiting);
             }
             if (!isContainerKind(catalogType.kind)) {
                 // Custom ThriftCatalog coercions cannot be known safely at compile time.
@@ -244,7 +356,7 @@ final class SwiftCatalogTypeClassifier {
                 return false;
             }
             for (TypeMirror argument : arguments) {
-                if (!isSupported(argument, visiting)) {
+                if (!isSupported(argument, dialect, visiting)) {
                     return false;
                 }
             }
@@ -257,6 +369,7 @@ final class SwiftCatalogTypeClassifier {
 
     private String normalizedType(
             TypeMirror type,
+            ThriftAnnotationDialect dialect,
             Set<String> visiting,
             boolean preserveStructArguments) {
         if (type == null) {
@@ -290,7 +403,7 @@ final class SwiftCatalogTypeClassifier {
             // Top-level values normalize to the Thrift type of TypeToken's first upper bound.
             return rawUpperBound == null
                     ? null
-                    : normalizedType(rawUpperBound, visiting, preserveStructArguments);
+                    : normalizedType(rawUpperBound, dialect, visiting, preserveStructArguments);
         }
         if (type.getKind() == TypeKind.WILDCARD) {
             WildcardType wildcard = (WildcardType) type;
@@ -300,13 +413,13 @@ final class SwiftCatalogTypeClassifier {
             }
             return upperBound == null
                     ? null
-                    : normalizedType(upperBound, visiting, preserveStructArguments);
+                    : normalizedType(upperBound, dialect, visiting, preserveStructArguments);
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
             List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
             return bounds.isEmpty()
                     ? null
-                    : normalizedType(bounds.get(0), visiting, preserveStructArguments);
+                    : normalizedType(bounds.get(0), dialect, visiting, preserveStructArguments);
         }
         if (type.getKind() != TypeKind.DECLARED) {
             return null;
@@ -318,7 +431,7 @@ final class SwiftCatalogTypeClassifier {
         }
         try {
             DeclaredType declaredType = (DeclaredType) type;
-            CatalogType catalogType = classify(declaredType);
+            CatalogType catalogType = classify(declaredType, dialect);
             if (catalogType.kind == Kind.BOXED || catalogType.kind == Kind.STRING) {
                 return catalogType.typeName;
             }
@@ -328,13 +441,31 @@ final class SwiftCatalogTypeClassifier {
             if (catalogType.kind == Kind.ENUM) {
                 return "ENUM:" + catalogType.typeName;
             }
+            if (catalogType.kind == Kind.OPTIONAL) {
+                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
+                if (arguments.isEmpty()) {
+                    if ("java.lang.Integer".equals(catalogType.typeName)) {
+                        return "java.lang.Integer";
+                    }
+                    if ("java.lang.Long".equals(catalogType.typeName)) {
+                        return "java.lang.Long";
+                    }
+                    if ("java.lang.Double".equals(catalogType.typeName)) {
+                        return "java.lang.Double";
+                    }
+                    return null;
+                }
+                return arguments.size() == 1
+                        ? normalizedType(arguments.get(0), dialect, visiting, true)
+                        : null;
+            }
             if (catalogType.kind == Kind.MAP) {
                 List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
                 if (arguments.size() != 2) {
                     return null;
                 }
-                String key = normalizedType(arguments.get(0), visiting, true);
-                String value = normalizedType(arguments.get(1), visiting, true);
+                String key = normalizedType(arguments.get(0), dialect, visiting, true);
+                String value = normalizedType(arguments.get(1), dialect, visiting, true);
                 return key == null || value == null ? null : "MAP<" + key + "," + value + ">";
             }
             if (catalogType.kind == Kind.SET || catalogType.kind == Kind.LIST) {
@@ -342,7 +473,7 @@ final class SwiftCatalogTypeClassifier {
                 if (arguments.size() != 1) {
                     return null;
                 }
-                String value = normalizedType(arguments.get(0), visiting, true);
+                String value = normalizedType(arguments.get(0), dialect, visiting, true);
                 if (value == null) {
                     return null;
                 }
@@ -364,6 +495,65 @@ final class SwiftCatalogTypeClassifier {
                         + "<" + join(normalizedArguments) + ">";
             }
             return null;
+        }
+        finally {
+            visiting.remove(visitKey);
+        }
+    }
+
+    private String carrierShape(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect,
+            Set<String> visiting) {
+        if (type == null || type.getKind() == TypeKind.ERROR) {
+            return "DEFERRED";
+        }
+        if (type.getKind() == TypeKind.TYPEVAR) {
+            if (identityFormatter.isModelTypeVariable(type)) {
+                return "DEFERRED";
+            }
+            return carrierShape(((TypeVariable) type).getUpperBound(), dialect, visiting);
+        }
+        if (type.getKind() == TypeKind.WILDCARD) {
+            return carrierShape(((WildcardType) type).getExtendsBound(), dialect, visiting);
+        }
+        if (type.getKind() == TypeKind.INTERSECTION) {
+            List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
+            return bounds.isEmpty() ? "DEFERRED"
+                    : carrierShape(bounds.get(0), dialect, visiting);
+        }
+        if (type.getKind() != TypeKind.DECLARED) {
+            return "VALUE";
+        }
+        String visitKey = "CARRIER:" + dialect + ":" + type;
+        if (!visiting.add(visitKey)) {
+            return "DEFERRED";
+        }
+        try {
+            CatalogType catalogType = classify((DeclaredType) type, dialect);
+            if (catalogType.kind == Kind.OPTIONAL) {
+                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
+                if (arguments.size() == 1) {
+                    return "OPTIONAL<"
+                            + carrierShape(arguments.get(0), dialect, visiting) + ">";
+                }
+                return "OPTIONAL_PRIMITIVE:" + catalogType.typeName;
+            }
+            if (catalogType.kind == Kind.MAP) {
+                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
+                return arguments.size() == 2
+                        ? "MAP<" + carrierShape(arguments.get(0), dialect, visiting)
+                        + "," + carrierShape(arguments.get(1), dialect, visiting) + ">"
+                        : "VALUE";
+            }
+            if (catalogType.kind == Kind.SET || catalogType.kind == Kind.LIST) {
+                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
+                return arguments.size() == 1
+                        ? catalogType.kind.name() + "<"
+                        + carrierShape(arguments.get(0), dialect, visiting) + ">"
+                        : "VALUE";
+            }
+            return "VALUE";
         }
         finally {
             visiting.remove(visitKey);

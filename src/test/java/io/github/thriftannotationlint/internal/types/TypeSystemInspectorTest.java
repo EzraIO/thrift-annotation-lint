@@ -14,6 +14,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -96,6 +97,10 @@ final class TypeSystemInspectorTest {
         assertEquals("true", probe.value("nested.deferred.compatible"));
         assertEquals("false", probe.value("container.kind.compatible"));
         assertEquals("false", probe.value("malformed.compatible"));
+        assertEquals("2", probe.value("cached.classifications"));
+        assertEquals("4", probe.value("cached.hierarchy.lookups"));
+        assertEquals("4", probe.value("next.round.classifications"));
+        assertEquals("8", probe.value("next.round.hierarchy.lookups"));
     }
 
     private static final class TypeSystemProbe extends AbstractProcessor {
@@ -126,8 +131,10 @@ final class TypeSystemInspectorTest {
             }
             inspected = true;
 
-            SwiftTypeInspector inspector = new SwiftTypeInspector(
-                    processingEnv.getTypeUtils(), processingEnv.getElementUtils());
+            TypeInspectionMetrics metrics = new TypeInspectionMetrics();
+            ThriftTypeInspector inspector = new ThriftTypeInspector(
+                    processingEnv.getTypeUtils(), processingEnv.getElementUtils(), metrics);
+            inspector.beginRound();
             TypeMirror map = field(fixture, "mapAndIterable").asType();
             TypeMirror set = field(fixture, "setValue").asType();
             TypeMirror enumType = field(fixture, "iterableEnum").asType();
@@ -172,6 +179,22 @@ final class TypeSystemInspectorTest {
                     "SET<java.lang.String>", "LIST<java.lang.String>"));
             put("malformed.compatible", inspector.areCompatibleNormalizedTypes(
                     "LIST<java.lang.String", "LIST<java.lang.Integer>"));
+            metrics.reset();
+            inspector.beginRound();
+            inspector.isSupported(list, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            inspector.isSupported(list, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            inspector.normalizedType(
+                    list, false, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            inspector.normalizedType(
+                    list, false, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            inspector.carrierShape(list, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            inspector.carrierShape(list, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            put("cached.classifications", Integer.toString(metrics.classifications()));
+            put("cached.hierarchy.lookups", Integer.toString(metrics.hierarchyLookups()));
+            inspector.beginRound();
+            inspector.isSupported(list, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+            put("next.round.classifications", Integer.toString(metrics.classifications()));
+            put("next.round.hierarchy.lookups", Integer.toString(metrics.hierarchyLookups()));
             return false;
         }
 

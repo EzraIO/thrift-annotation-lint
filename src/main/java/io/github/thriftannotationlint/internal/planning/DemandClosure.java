@@ -6,7 +6,9 @@ import io.github.thriftannotationlint.internal.extract.SwiftModelClassifier;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ModelReference;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -60,11 +62,11 @@ public final class DemandClosure {
         }
     }
 
-    private final SwiftTypeInspector typeInspector;
+    private final ThriftTypeInspector typeInspector;
     private final SwiftModelClassifier modelClassifier;
 
     public DemandClosure(
-            SwiftTypeInspector typeInspector,
+            ThriftTypeInspector typeInspector,
             SwiftModelClassifier modelClassifier) {
         this.typeInspector = typeInspector;
         this.modelClassifier = modelClassifier;
@@ -75,7 +77,7 @@ public final class DemandClosure {
     }
 
     public void schedule(ModelDemand demand, WorkQueue queue) {
-        if (queue.scheduledIdentities.add(demand.identity)) {
+        if (queue.scheduledIdentities.add(demand.cacheKey())) {
             queue.demands.add(demand);
         }
     }
@@ -103,6 +105,17 @@ public final class DemandClosure {
         if (kind == null) {
             return new Expansion(null, null);
         }
+        ThriftAnnotationDialect explicitDialect = ThriftAnnotations.dialectFor(
+                referencedType, kind);
+        if (explicitDialect != null && explicitDialect != owner.dialect()) {
+            return new Expansion(null, Finding.error(
+                    DiagnosticCode.MODEL_DECLARATION,
+                    part.element(),
+                    "Thrift model '" + owner.type().getQualifiedName() + "' uses "
+                            + owner.dialect().displayName() + " but references model '"
+                            + referencedType.getQualifiedName() + "' declared with "
+                            + explicitDialect.displayName() + "."));
+        }
 
         String identity = typeInspector.exactJavaTypeIdentity(
                 modelReference.requestedType());
@@ -127,7 +140,8 @@ public final class DemandClosure {
                         "Recursive generic model '" + referencedName
                                 + "' keeps producing deeper exact type instances "
                                 + "after all type-parameter positions have been "
-                                + "traversed; Swift's metadata cache cannot "
+                                + "traversed; " + owner.dialect().runtimeName()
+                                + "'s metadata cache cannot "
                                 + "converge."));
             }
         }
@@ -140,6 +154,7 @@ public final class DemandClosure {
                 reference,
                 modelReference.requestedType(),
                 identity,
+                owner.dialect(),
                 kind,
                 anchor,
                 owner.path.append(
@@ -153,6 +168,7 @@ public final class DemandClosure {
     public ModelDemand scheduleRootReference(
             ModelReference modelReference,
             Element anchor,
+            ThriftAnnotationDialect dialect,
             boolean forceRevalidation,
             WorkQueue queue) {
         DeclaredType reference = modelReference.modelView();
@@ -165,6 +181,11 @@ public final class DemandClosure {
         if (kind == null) {
             return null;
         }
+        ThriftAnnotationDialect explicitDialect = ThriftAnnotations.dialectFor(
+                referencedType, kind);
+        if (explicitDialect != null && explicitDialect != dialect) {
+            return null;
+        }
         String identity = typeInspector.exactJavaTypeIdentity(
                 modelReference.requestedType());
         String referencedName = referencedType.getQualifiedName().toString();
@@ -173,12 +194,38 @@ public final class DemandClosure {
                 reference,
                 modelReference.requestedType(),
                 identity,
+                dialect,
                 kind,
                 anchor,
                 initialPath(referencedName, modelReference.requestedType()),
                 forceRevalidation);
         schedule(demand, queue);
         return demand;
+    }
+
+    public Finding rootDialectConflict(
+            ModelReference modelReference,
+            Element anchor,
+            ThriftAnnotationDialect dialect) {
+        Element element = modelReference.modelView().asElement();
+        if (!(element instanceof TypeElement)) {
+            return null;
+        }
+        TypeElement referencedType = (TypeElement) element;
+        SwiftModel.Kind kind = modelClassifier.modelKind(referencedType);
+        if (kind == null) {
+            return null;
+        }
+        ThriftAnnotationDialect explicit = ThriftAnnotations.dialectFor(referencedType, kind);
+        if (explicit == null || explicit == dialect) {
+            return null;
+        }
+        return Finding.error(
+                DiagnosticCode.MODEL_DECLARATION,
+                anchor,
+                "Annotated container '" + anchor + "' uses " + dialect.displayName()
+                        + " but references model '" + referencedType.getQualifiedName()
+                        + "' declared with " + explicit.displayName() + ".");
     }
 
     private int consecutiveGrowthSteps(
@@ -201,9 +248,12 @@ public final class DemandClosure {
         return typeComplexity(type, new LinkedHashSet<String>());
     }
 
-    public List<ModelReference> references(TypeMirror type) {
+    public List<ModelReference> references(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect) {
         List<ModelReference> references = new ArrayList<ModelReference>();
-        collectReferencedModelTypes(type, references, new LinkedHashSet<String>());
+        collectReferencedModelTypes(
+                type, dialect, references, new LinkedHashSet<String>());
         return references;
     }
 
@@ -247,6 +297,7 @@ public final class DemandClosure {
 
     private void collectReferencedModelTypes(
             TypeMirror type,
+            ThriftAnnotationDialect dialect,
             List<ModelReference> references,
             Set<String> visiting) {
         if (type == null || type.getKind() == TypeKind.ERROR) {
@@ -261,7 +312,7 @@ public final class DemandClosure {
                 if (!typeInspector.isModelTypeVariable(type)) {
                     TypeMirror bound = firstUpperBound(((TypeVariable) type).getUpperBound());
                     if (!addModelReference(type, bound, references)) {
-                        collectReferencedModelTypes(bound, references, visiting);
+                        collectReferencedModelTypes(bound, dialect, references, visiting);
                     }
                 }
                 return;
@@ -272,14 +323,14 @@ public final class DemandClosure {
                         ? wildcard.getSuperBound()
                         : wildcard.getExtendsBound();
                 if (!addModelReference(type, firstUpperBound(bound), references)) {
-                    collectReferencedModelTypes(bound, references, visiting);
+                    collectReferencedModelTypes(bound, dialect, references, visiting);
                 }
                 return;
             }
             if (type.getKind() == TypeKind.INTERSECTION) {
                 List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
                 if (!bounds.isEmpty()) {
-                    collectReferencedModelTypes(bounds.get(0), references, visiting);
+                    collectReferencedModelTypes(bounds.get(0), dialect, references, visiting);
                 }
                 return;
             }
@@ -296,9 +347,11 @@ public final class DemandClosure {
                 references.add(new ModelReference(declared, declared));
                 return;
             }
-            if (typeInspector.isContainerType(type)) {
-                for (TypeMirror argument : typeInspector.containerTypeArguments(type)) {
-                    collectReferencedModelTypes(argument, references, visiting);
+            List<TypeMirror> nestedArguments =
+                    typeInspector.nestedWireTypeArguments(type, dialect);
+            if (!nestedArguments.isEmpty()) {
+                for (TypeMirror argument : nestedArguments) {
+                    collectReferencedModelTypes(argument, dialect, references, visiting);
                 }
                 return;
             }

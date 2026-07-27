@@ -1,4 +1,4 @@
-package io.github.thriftannotationlint.internal.extract;
+package io.github.thriftannotationlint.internal.model;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -15,7 +15,7 @@ public final class SwiftMemberNames {
         return member.getSimpleName().toString();
     }
 
-    static String extractedFieldName(String methodName) {
+    public static String extractedFieldName(String methodName) {
         if ((methodName.startsWith("get") || methodName.startsWith("set"))
                 && methodName.length() > 3) {
             return Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);

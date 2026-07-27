@@ -1,5 +1,7 @@
 package io.github.thriftannotationlint.internal.types;
 
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
+
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
@@ -18,13 +20,13 @@ import java.util.Set;
 final class NormalizedTypeCompatibility {
     private final Types types;
     private final TypeHierarchyResolver hierarchyResolver;
-    private final SwiftCatalogTypeClassifier classifier;
+    private final WireTypeClassifier classifier;
     private final JavaTypeIdentityFormatter identityFormatter;
 
     NormalizedTypeCompatibility(
             Types types,
             TypeHierarchyResolver hierarchyResolver,
-            SwiftCatalogTypeClassifier classifier,
+            WireTypeClassifier classifier,
             JavaTypeIdentityFormatter identityFormatter) {
         this.types = types;
         this.hierarchyResolver = hierarchyResolver;
@@ -68,24 +70,62 @@ final class NormalizedTypeCompatibility {
         return true;
     }
 
+    boolean areCompatibleCarrierShapes(String left, String right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left.equals(right) || "DEFERRED".equals(left) || "DEFERRED".equals(right)) {
+            return true;
+        }
+        String leftKind = genericKind(left);
+        if (leftKind == null || !leftKind.equals(genericKind(right))) {
+            return false;
+        }
+        List<String> leftArguments = containerArguments(left);
+        List<String> rightArguments = containerArguments(right);
+        if (leftArguments == null || rightArguments == null
+                || leftArguments.size() != rightArguments.size()) {
+            return false;
+        }
+        for (int index = 0; index < leftArguments.size(); index++) {
+            if (!areCompatibleCarrierShapes(
+                    leftArguments.get(index), rightArguments.get(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Returns whether this extraction type can be passed to Swift's canonical codec shape. */
     boolean providesCanonicalValue(TypeMirror source) {
-        return isCanonicalShapeCompatible(
-                source, true, new HashSet<String>());
+        return providesCanonicalValue(source, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+    }
+
+    boolean providesCanonicalValue(TypeMirror source, ThriftAnnotationDialect dialect) {
+        return isCanonicalShapeCompatible(source, dialect, true, new HashSet<String>());
     }
 
     /** Returns whether Swift's canonical decoded value can be injected into this Java type. */
     boolean acceptsDecodedValue(TypeMirror target) {
-        return isCanonicalShapeCompatible(
-                target, false, new HashSet<String>());
+        return acceptsDecodedValue(target, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+    }
+
+    boolean acceptsDecodedValue(TypeMirror target, ThriftAnnotationDialect dialect) {
+        return isCanonicalShapeCompatible(target, dialect, false, new HashSet<String>());
     }
 
     String canonicalDecodedTypeName(TypeMirror target) {
-        TypeMirror canonical = canonicalDecodedType(target);
+        return canonicalDecodedTypeName(target, ThriftAnnotationDialect.FACEBOOK_SWIFT);
+    }
+
+    String canonicalDecodedTypeName(TypeMirror target, ThriftAnnotationDialect dialect) {
+        TypeMirror canonical = canonicalDecodedType(target, dialect);
         return canonical == null ? null : types.erasure(canonical).toString();
     }
 
-    private TypeMirror canonicalDecodedType(TypeMirror type) {
+    private TypeMirror canonicalDecodedType(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect) {
         if (type == null) {
             return null;
         }
@@ -93,23 +133,26 @@ final class NormalizedTypeCompatibility {
             if (identityFormatter.isModelTypeVariable(type)) {
                 return null;
             }
-            return canonicalDecodedType(((TypeVariable) type).getUpperBound());
+            return canonicalDecodedType(((TypeVariable) type).getUpperBound(), dialect);
         }
         if (type.getKind() == TypeKind.WILDCARD) {
-            return canonicalDecodedType(((WildcardType) type).getExtendsBound());
+            return canonicalDecodedType(((WildcardType) type).getExtendsBound(), dialect);
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
             List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return bounds.isEmpty() ? null : canonicalDecodedType(bounds.get(0));
+            return bounds.isEmpty() ? null : canonicalDecodedType(bounds.get(0), dialect);
         }
         if (type.getKind() != TypeKind.DECLARED) {
             return null;
         }
         DeclaredType declared = (DeclaredType) type;
-        SwiftCatalogTypeClassifier.CatalogType catalogType = classifier.classify(declared);
-        if (catalogType.kind == SwiftCatalogTypeClassifier.Kind.ENUM) {
+        WireTypeClassifier.CatalogType catalogType = classifier.classify(declared, dialect);
+        if (catalogType.kind == WireTypeClassifier.Kind.ENUM) {
             // ThriftCatalog classifies Enum before Map, Set, and Iterable. An enum is allowed to
             // implement a container interface without changing its canonical codec shape.
+            return declared;
+        }
+        if (catalogType.kind == WireTypeClassifier.Kind.OPTIONAL) {
             return declared;
         }
         TypeElement canonicalType = classifier.canonicalType(catalogType.kind);
@@ -118,6 +161,7 @@ final class NormalizedTypeCompatibility {
 
     private boolean isCanonicalShapeCompatible(
             TypeMirror type,
+            ThriftAnnotationDialect dialect,
             boolean readable,
             Set<String> visiting) {
         if (type == null
@@ -127,16 +171,16 @@ final class NormalizedTypeCompatibility {
         }
         if (type.getKind() == TypeKind.TYPEVAR) {
             return isCanonicalShapeCompatible(
-                    ((TypeVariable) type).getUpperBound(), readable, visiting);
+                    ((TypeVariable) type).getUpperBound(), dialect, readable, visiting);
         }
         if (type.getKind() == TypeKind.WILDCARD) {
             return isCanonicalShapeCompatible(
-                    ((WildcardType) type).getExtendsBound(), readable, visiting);
+                    ((WildcardType) type).getExtendsBound(), dialect, readable, visiting);
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
             List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
             return bounds.isEmpty()
-                    || isCanonicalShapeCompatible(bounds.get(0), readable, visiting);
+                    || isCanonicalShapeCompatible(bounds.get(0), dialect, readable, visiting);
         }
         if (type.getKind() != TypeKind.DECLARED) {
             return true;
@@ -148,8 +192,18 @@ final class NormalizedTypeCompatibility {
         }
         try {
             DeclaredType declared = (DeclaredType) type;
-            SwiftCatalogTypeClassifier.CatalogType catalogType = classifier.classify(declared);
-            if (catalogType.kind == SwiftCatalogTypeClassifier.Kind.ENUM) {
+            WireTypeClassifier.CatalogType catalogType =
+                    classifier.classify(declared, dialect);
+            if (catalogType.kind == WireTypeClassifier.Kind.ENUM) {
+                return true;
+            }
+            if (catalogType.kind == WireTypeClassifier.Kind.OPTIONAL) {
+                for (TypeMirror argument : catalogType.view.getTypeArguments()) {
+                    if (!isCanonicalShapeCompatible(
+                            argument, dialect, readable, visiting)) {
+                        return false;
+                    }
+                }
                 return true;
             }
             TypeElement canonicalType = classifier.canonicalType(catalogType.kind);
@@ -163,7 +217,7 @@ final class NormalizedTypeCompatibility {
                     // The resolved ByteBuffer/Map/Set view already proves read assignability.
                     // Iterable codecs canonicalize to List, so that one case needs the stronger
                     // List-subtype proof (using the same generated-hierarchy fallback).
-                    rawCompatible = catalogType.kind != SwiftCatalogTypeClassifier.Kind.LIST
+                    rawCompatible = catalogType.kind != WireTypeClassifier.Kind.LIST
                             || hierarchyResolver.asSupertype(
                             declared, classifier.listType()) != null;
                 }
@@ -182,7 +236,7 @@ final class NormalizedTypeCompatibility {
                 return false;
             }
             for (TypeMirror argument : catalogType.view.getTypeArguments()) {
-                if (!isCanonicalShapeCompatible(argument, readable, visiting)) {
+                if (!isCanonicalShapeCompatible(argument, dialect, readable, visiting)) {
                     return false;
                 }
             }
@@ -202,6 +256,9 @@ final class NormalizedTypeCompatibility {
         }
         if (normalizedType.startsWith("MAP<")) {
             return "MAP";
+        }
+        if (normalizedType.startsWith("OPTIONAL<")) {
+            return "OPTIONAL";
         }
         if (normalizedType.startsWith("STRUCT:")) {
             int opening = normalizedType.indexOf('<');

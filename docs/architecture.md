@@ -32,9 +32,10 @@ another processor.
 
 ## Round and state ownership
 
-`ValidationSession` is created once for one processor compilation. It owns one
-`CompilationState`, one `SwiftTypeInspector`, and the subsystem facades. No
-`TypeMirror`, `Element`, or resolved hierarchy view is cached by the type,
+`ValidationSession` is a thin lifecycle facade created once for one processor compilation.
+`RoundValidationEngine` owns one `CompilationState`, one `ThriftTypeInspector`, and the
+subsystem facades. `ReferenceDemandScheduler` owns container validation and referenced-model
+queue expansion. No `TypeMirror`, `Element`, or resolved hierarchy view is cached by the type,
 extraction, or validation subsystems across annotation rounds. Elements kept as
 diagnostic anchors are held only by the compilation state and are discarded
 when their exact model identity is released.
@@ -45,7 +46,7 @@ when their exact model identity is released.
 - round-local resolved models and immutable logical-field validation results
   used by cycle validation;
 - current-compilation type names;
-- pending raw model names and their kinds;
+- pending raw model names, kinds, and dialects;
 - dependency diagnostic anchors;
 - source-root classification; and
 - the exact-model budget.
@@ -75,6 +76,8 @@ generated hierarchies from consuming budget or suppressing later work.
 ancestry, and expanding-cycle detection. `LinkedHashMap` and `LinkedHashSet` are
 used deliberately: replacing them with unordered collections can change which
 diagnostic is reported first or which recursive edge represents a cycle.
+`DemandPath` is a persistent parent-linked path: appending a demand shares all ancestors instead
+of copying the complete path, while same-raw-type lookup retains insertion order.
 
 Source roots do not consume `ExactModelBudget`. A referenced exact identity is
 charged only after extraction proves that the symbol graph is complete and the
@@ -84,17 +87,22 @@ the same compilation do not create duplicate diagnostics.
 
 ## Type system
 
-`SwiftTypeInspector` is a facade over four focused services:
+`ThriftTypeInspector` is the shared type facade:
 
 - `TypeHierarchyResolver` resolves mirror-first hierarchy views, with an
   element fallback for incomplete javac symbols and generic substitution;
-- `SwiftCatalogTypeClassifier` mirrors Swift classification precedence;
+- `WireTypeClassifier` and `DialectTypePolicy` apply shared classification precedence and
+  codec-specific capabilities;
+- `NormalizedWireTypeFormatter` and `CarrierShapeClassifier` separate wire identity from Java
+  wrapper compatibility;
 - `JavaTypeIdentityFormatter` creates the exact identity strings used by state
   and diagnostics; and
 - `NormalizedTypeCompatibility` checks supported and canonical codec shapes.
 
 Classification precedence is binary, enum, `Map`, `Set`, `Iterable`, then
-struct/union. The exact identity format is intentionally a string contract and
+the Drift-only Optional policy, and finally struct/union. Optional generic
+elements are classified recursively; primitive Optional variants map to their
+I32, I64, and DOUBLE wire shapes. The exact identity format is intentionally a string contract and
 must remain character-for-character compatible. Incomplete symbols fail closed
 and are deferred; they are not guessed from source text.
 
@@ -104,6 +112,10 @@ and are deferred; they are not guessed from source text.
 member resolution, parameter-name resolution, and construction, field, union,
 and enum extractors. It receives the current round's compilation type names as
 an explicit argument and has no mutable cross-round extraction context.
+The planner and extractor share one member resolver, which caches hierarchy and `getAllMembers`
+results only for the active round.
+Type classification and supertype views have the same round-local lifetime and are cleared before
+historical roots are rebuilt.
 
 `ThriftAnnotationDialect` is the boundary between shared metadata validation and
 codec-specific annotation names. A model selects exactly one dialect (Facebook
@@ -111,6 +123,12 @@ Swift or Airlift Drift); extraction never searches the other dialect after that
 selection, and mixed annotations fail before logical-field validation. This keeps
 the existing `SwiftModel` representation internal while preventing annotation
 families from being merged accidentally.
+Demand, pending-round state, recursion vertices, and validation caches carry the
+selected dialect explicitly. User-visible identities remain exact Java type
+names, while internal cache keys combine dialect and exact identity so a plain
+enum reached from Swift and Drift cannot be incorrectly deduplicated. Explicit
+model annotations take precedence over inherited reference dialects, and a
+cross-dialect reference terminates that branch with `AW1001`.
 
 Classpath parameter names are obtained through `ClasspathParameterNames`,
 which bounds resource reads and cache weight. `JvmDescriptorEncoder` produces

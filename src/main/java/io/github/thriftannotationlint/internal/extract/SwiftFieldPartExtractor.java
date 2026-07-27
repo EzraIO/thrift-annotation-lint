@@ -1,5 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
+import io.github.thriftannotationlint.internal.model.SwiftMemberNames;
+
 import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 

@@ -1,4 +1,4 @@
-package io.github.thriftannotationlint.internal.extract;
+package io.github.thriftannotationlint.internal.validation;
 
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
@@ -14,8 +14,8 @@ import java.util.Map;
 import java.util.Set;
 
 /** Reproduces Swift's logical-field merging and exactly-two-pass ID inference. */
-public final class LogicalFieldResolver {
-    public ResolvedLogicalFields resolve(List<FieldPart> parts) {
+final class LogicalFieldResolver {
+    ResolvedLogicalFields resolve(List<FieldPart> parts) {
         Map<FieldPart, Short> resolvedIds = resolveFieldIds(parts);
         return new ResolvedLogicalFields(mergeLogicalFields(parts), resolvedIds);
     }

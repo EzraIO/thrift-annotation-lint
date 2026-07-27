@@ -5,7 +5,7 @@ import io.github.thriftannotationlint.internal.diagnostic.Finding;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.PackageElement;
@@ -24,9 +24,9 @@ import java.util.Set;
 
 /** Detects unqualified direct model cycles using deterministic iterative Tarjan traversal. */
 final class RecursiveModelCycleValidator {
-    private final SwiftTypeInspector typeInspector;
+    private final ThriftTypeInspector typeInspector;
 
-    RecursiveModelCycleValidator(SwiftTypeInspector typeInspector) {
+    RecursiveModelCycleValidator(ThriftTypeInspector typeInspector) {
         this.typeInspector = typeInspector;
     }
 
@@ -38,8 +38,8 @@ final class RecursiveModelCycleValidator {
         for (ModelValidation validation : validations) {
             SwiftModel model = validation.model();
             if (model.kind() != SwiftModel.Kind.ENUM) {
-                modelsByIdentity.put(model.identity(), model);
-                fieldsByIdentity.put(model.identity(), validation.resolvedFields());
+                modelsByIdentity.put(model.cacheKey(), model);
+                fieldsByIdentity.put(model.cacheKey(), validation.resolvedFields());
             }
         }
 
@@ -53,7 +53,7 @@ final class RecursiveModelCycleValidator {
         // views such as B<T-from-A>, allowing generic cycles to close without falsely rejecting a
         // finite chain such as A<B<String>> -> B<String> -> A<String> -> String.
         for (SwiftModel model : modelsByIdentity.values()) {
-            ResolvedLogicalFields resolvedFields = fieldsByIdentity.get(model.identity());
+            ResolvedLogicalFields resolvedFields = fieldsByIdentity.get(model.cacheKey());
             for (ResolvedLogicalFields.LogicalField field : resolvedFields.fields()) {
                 if (field.isRecursiveReference()) {
                     continue;
@@ -61,7 +61,10 @@ final class RecursiveModelCycleValidator {
                 Map<String, FieldPart> targets = new LinkedHashMap<String, FieldPart>();
                 for (FieldPart part : field.parts()) {
                     String targetName = directModelName(
-                            model.type(), part.javaType(), modelsByIdentity.keySet());
+                            model.type(),
+                            part.javaType(),
+                            model.dialect(),
+                            modelsByIdentity.keySet());
                     if (targetName == null) {
                         continue;
                     }
@@ -71,10 +74,10 @@ final class RecursiveModelCycleValidator {
                     }
                 }
                 for (Map.Entry<String, FieldPart> target : targets.entrySet()) {
-                    graph.get(model.identity()).add(new ModelEdge(
-                            model.identity(),
+                    graph.get(model.cacheKey()).add(new ModelEdge(
+                            model.cacheKey(),
                             target.getKey(),
-                            displayNames.get(model.identity()),
+                            displayNames.get(model.cacheKey()),
                             displayNames.get(target.getKey()),
                             field.displayName(),
                             target.getValue()));
@@ -121,11 +124,13 @@ final class RecursiveModelCycleValidator {
     private String directModelName(
             TypeElement source,
             TypeMirror type,
+            io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect dialect,
             Set<String> knownModels) {
         if (type == null) {
             return null;
         }
-        String candidate = typeInspector.exactJavaTypeIdentity(type);
+        String identity = typeInspector.exactJavaTypeIdentity(type);
+        String candidate = dialect.name() + "\u0000" + identity;
         if (knownModels.contains(candidate)) {
             return candidate;
         }
@@ -135,6 +140,7 @@ final class RecursiveModelCycleValidator {
             return directModelName(
                     source,
                     ((javax.lang.model.type.TypeVariable) type).getUpperBound(),
+                    dialect,
                     knownModels);
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
@@ -142,7 +148,7 @@ final class RecursiveModelCycleValidator {
                     ((javax.lang.model.type.IntersectionType) type).getBounds();
             return bounds.isEmpty()
                     ? null
-                    : directModelName(source, bounds.get(0), knownModels);
+                    : directModelName(source, bounds.get(0), dialect, knownModels);
         }
         if ((type.getKind() != TypeKind.DECLARED
                 && type.getKind() != TypeKind.ERROR)
@@ -154,16 +160,21 @@ final class RecursiveModelCycleValidator {
         Element element = ((DeclaredType) type).asElement();
 
         candidate = element instanceof TypeElement
-                ? ((TypeElement) element).getQualifiedName().toString()
+                ? dialect.name() + "\u0000"
+                        + ((TypeElement) element).getQualifiedName().toString()
                 : candidate;
         if (knownModels.contains(candidate)) {
             return candidate;
         }
 
+        if (!(element instanceof TypeElement)) {
+            return null;
+        }
         String packageName = packageName(source);
         String packageRelative = packageName.isEmpty()
                 ? candidate
-                : packageName + "." + candidate;
+                : dialect.name() + "\u0000" + packageName + "."
+                        + ((TypeElement) element).getSimpleName();
         return knownModels.contains(packageRelative) ? packageRelative : null;
     }
 

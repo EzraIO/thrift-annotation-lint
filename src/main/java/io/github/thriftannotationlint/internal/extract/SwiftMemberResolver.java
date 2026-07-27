@@ -28,26 +28,52 @@ import java.util.Map;
 import java.util.Set;
 
 /** Resolves reflection-equivalent members and their generic use-site views. */
-final class SwiftMemberResolver {
+public final class SwiftMemberResolver {
     private final Elements elements;
     private final Types types;
+    private final MemberResolutionMetrics metrics;
+    private final Map<String, List<? extends Element>> roundMembers =
+            new LinkedHashMap<String, List<? extends Element>>();
+    private final Map<String, List<TypeElement>> roundHierarchies =
+            new LinkedHashMap<String, List<TypeElement>>();
+    private final Map<String, List<ExecutableElement>> roundEffectiveMethods =
+            new LinkedHashMap<String, List<ExecutableElement>>();
 
-    SwiftMemberResolver(Elements elements, Types types) {
+    public SwiftMemberResolver(Elements elements, Types types) {
+        this(elements, types, null);
+    }
+
+    SwiftMemberResolver(
+            Elements elements,
+            Types types,
+            MemberResolutionMetrics metrics) {
         this.elements = elements;
         this.types = types;
+        this.metrics = metrics;
+    }
+
+    public void beginRound() {
+        roundMembers.clear();
+        roundHierarchies.clear();
+        roundEffectiveMethods.clear();
     }
 
     List<ExecutableElement> effectiveMethods(
             TypeElement root,
             String annotationName,
             boolean includeParameterAnnotations) {
+        String effectiveKey = root.getQualifiedName() + "\u0000" + annotationName
+                + "\u0000" + includeParameterAnnotations;
+        List<ExecutableElement> cachedEffective = roundEffectiveMethods.get(effectiveKey);
+        if (cachedEffective != null) {
+            return cachedEffective;
+        }
         // ReflectionHelper starts with Class.getMethods(), skips bridge/synthetic methods, then
         // looks annotations up recursively using raw JVM parameter classes. The declaration
         // signature must therefore use erasure rather than the root's asMemberOf view.
         Map<String, ExecutableElement> candidates =
                 new LinkedHashMap<String, ExecutableElement>();
-        for (ExecutableElement method
-                : ElementFilter.methodsIn(elements.getAllMembers(root))) {
+        for (ExecutableElement method : allMethods(root)) {
             if (!method.getModifiers().contains(Modifier.PUBLIC)
                     || method.getModifiers().contains(Modifier.STATIC)) {
                 continue;
@@ -71,6 +97,8 @@ final class SwiftMemberResolver {
                 result.add(selected);
             }
         }
+        result = Collections.unmodifiableList(result);
+        roundEffectiveMethods.put(effectiveKey, result);
         return result;
     }
 
@@ -84,9 +112,35 @@ final class SwiftMemberResolver {
     }
 
     List<TypeElement> hierarchy(TypeElement root) {
+        String key = root.getQualifiedName().toString();
+        List<TypeElement> cached = roundHierarchies.get(key);
+        if (cached != null) {
+            return cached;
+        }
         List<TypeElement> result = new ArrayList<TypeElement>();
         collectHierarchy(root, result, new LinkedHashSet<String>());
+        result = Collections.unmodifiableList(result);
+        roundHierarchies.put(key, result);
         return result;
+    }
+
+    private List<ExecutableElement> allMethods(TypeElement root) {
+        return ElementFilter.methodsIn(allMembers(root));
+    }
+
+    public List<? extends Element> allMembers(TypeElement root) {
+        String key = root.getQualifiedName().toString();
+        List<? extends Element> cached = roundMembers.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        if (metrics != null) {
+            metrics.memberEnumeration();
+        }
+        List<? extends Element> members = Collections.unmodifiableList(
+                new ArrayList<Element>(elements.getAllMembers(root)));
+        roundMembers.put(key, members);
+        return members;
     }
 
     ResolvedExecutable resolveExecutable(

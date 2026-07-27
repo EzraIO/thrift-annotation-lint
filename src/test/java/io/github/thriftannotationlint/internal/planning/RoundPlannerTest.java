@@ -4,7 +4,7 @@ import io.github.thriftannotationlint.CompilerTestSupport;
 
 import io.github.thriftannotationlint.internal.extract.SwiftModelClassifier;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import org.junit.jupiter.api.Test;
 
@@ -56,7 +56,7 @@ class RoundPlannerTest {
         public synchronized void init(ProcessingEnvironment environment) {
             super.init(environment);
             state = new CompilationState(16);
-            SwiftTypeInspector typeInspector = new SwiftTypeInspector(
+            ThriftTypeInspector typeInspector = new ThriftTypeInspector(
                     environment.getTypeUtils(), environment.getElementUtils());
             SwiftModelClassifier modelClassifier = new SwiftModelClassifier();
             DemandClosure demandClosure = new DemandClosure(typeInspector, modelClassifier);
@@ -88,7 +88,8 @@ class RoundPlannerTest {
             RoundPlanner.Plan plan = planner.plan(roundEnvironment);
             if (rounds++ == 0) {
                 state.beginPendingAggregation();
-                state.markPending("example.AHistorical", SwiftModel.Kind.STRUCT);
+                state.markPending("example.AHistorical", SwiftModel.Kind.STRUCT,
+                        io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect.FACEBOOK_SWIFT);
                 generate(
                         "example.GeneratedBase",
                         "package example; public class GeneratedBase "

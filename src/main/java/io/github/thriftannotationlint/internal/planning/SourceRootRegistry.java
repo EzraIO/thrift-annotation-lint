@@ -1,57 +1,78 @@
 package io.github.thriftannotationlint.internal.planning;
 
 import io.github.thriftannotationlint.internal.model.SwiftModel;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Maintains the mutually exclusive model/container state of compilation source roots. */
 final class SourceRootRegistry {
-    private final Map<String, SwiftModel.Kind> modelKinds =
-            new LinkedHashMap<String, SwiftModel.Kind>();
+    private final Map<String, ModelRegistration> models =
+            new LinkedHashMap<String, ModelRegistration>();
     private final Map<String, String> modelIdentities =
             new LinkedHashMap<String, String>();
-    private final Set<String> containerNames = new LinkedHashSet<String>();
+    private final Map<String, ThriftAnnotationDialect> containerDialects =
+            new LinkedHashMap<String, ThriftAnnotationDialect>();
 
     void clear() {
-        modelKinds.clear();
+        models.clear();
         modelIdentities.clear();
-        containerNames.clear();
+        containerDialects.clear();
     }
 
-    void registerModel(String name, SwiftModel.Kind kind, String identity) {
-        containerNames.remove(name);
-        modelKinds.put(name, kind);
-        modelIdentities.put(name, identity);
+    void registerModel(
+            String name,
+            SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect,
+            String identity) {
+        containerDialects.remove(name);
+        ModelRegistration registration = new ModelRegistration(name, kind, dialect);
+        models.put(registration.key(), registration);
+        modelIdentities.put(registration.key(), identity);
     }
 
-    void registerContainer(String name) {
-        if (modelKinds.containsKey(name)) {
+    void registerContainer(String name, ThriftAnnotationDialect dialect) {
+        if (isModelName(name)) {
             throw new IllegalStateException(
                     "A source model must use the atomic model-to-container migration");
         }
-        containerNames.add(name);
+        containerDialects.put(name, dialect);
     }
 
-    boolean migrateModelToContainer(String name) {
-        if (!modelKinds.containsKey(name)) {
+    boolean migrateModelToContainer(String name, ThriftAnnotationDialect dialect) {
+        if (!isModelName(name)) {
             return false;
         }
-        modelKinds.remove(name);
-        modelIdentities.remove(name);
-        containerNames.add(name);
+        for (String key : modelKeys(name)) {
+            models.remove(key);
+            modelIdentities.remove(key);
+        }
+        containerDialects.put(name, dialect);
         return true;
     }
 
-    String modelIdentity(String name) {
-        return modelIdentities.get(name);
+    List<String> modelIdentities(String name) {
+        List<String> result = new ArrayList<String>();
+        for (String key : modelKeys(name)) {
+            String identity = modelIdentities.get(key);
+            if (identity != null) {
+                result.add(identity);
+            }
+        }
+        return result;
     }
 
     boolean isModelName(String name) {
-        return modelKinds.containsKey(name);
+        for (ModelRegistration registration : models.values()) {
+            if (registration.typeName.equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     boolean isModelIdentity(String identity) {
@@ -59,15 +80,26 @@ final class SourceRootRegistry {
     }
 
     boolean isEmpty() {
-        return modelKinds.isEmpty() && containerNames.isEmpty();
+        return models.isEmpty() && containerDialects.isEmpty();
     }
 
-    Map<String, SwiftModel.Kind> historicalModels() {
+    Map<String, ModelRegistration> historicalModels() {
         return Collections.unmodifiableMap(
-                new LinkedHashMap<String, SwiftModel.Kind>(modelKinds));
+                new LinkedHashMap<String, ModelRegistration>(models));
     }
 
-    Set<String> historicalContainers() {
-        return Collections.unmodifiableSet(new LinkedHashSet<String>(containerNames));
+    Map<String, ThriftAnnotationDialect> historicalContainers() {
+        return Collections.unmodifiableMap(
+                new LinkedHashMap<String, ThriftAnnotationDialect>(containerDialects));
+    }
+
+    private List<String> modelKeys(String name) {
+        List<String> result = new ArrayList<String>();
+        for (Map.Entry<String, ModelRegistration> entry : models.entrySet()) {
+            if (entry.getValue().typeName.equals(name)) {
+                result.add(entry.getKey());
+            }
+        }
+        return result;
     }
 }

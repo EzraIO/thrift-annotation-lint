@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.planning;
 
 import io.github.thriftannotationlint.internal.model.SwiftModel;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import io.github.thriftannotationlint.internal.validation.ModelValidation;
 
 import javax.lang.model.element.Element;
@@ -15,17 +16,17 @@ import java.util.Set;
 /** Owns all cross-round mutable state for one annotation-processing compilation. */
 public final class CompilationState {
     static final class RoundStart {
-        private final Map<String, SwiftModel.Kind> previousPendingModels;
+        private final Map<String, ModelRegistration> previousPendingModels;
         private final boolean rebuildDemandClosure;
 
         private RoundStart(
-                Map<String, SwiftModel.Kind> previousPendingModels,
+                Map<String, ModelRegistration> previousPendingModels,
                 boolean rebuildDemandClosure) {
             this.previousPendingModels = previousPendingModels;
             this.rebuildDemandClosure = rebuildDemandClosure;
         }
 
-        Map<String, SwiftModel.Kind> previousPendingModels() {
+        Map<String, ModelRegistration> previousPendingModels() {
             return previousPendingModels;
         }
 
@@ -43,8 +44,8 @@ public final class CompilationState {
     private final Set<String> compilationTypes = new LinkedHashSet<String>();
     private final Map<String, Element> dependencyAnchors =
             new LinkedHashMap<String, Element>();
-    private final Map<String, SwiftModel.Kind> pendingModels =
-            new LinkedHashMap<String, SwiftModel.Kind>();
+    private final Map<String, ModelRegistration> pendingModels =
+            new LinkedHashMap<String, ModelRegistration>();
     private final SourceRootRegistry sourceRoots = new SourceRootRegistry();
     private final ExactModelBudget exactModelBudget;
 
@@ -53,8 +54,8 @@ public final class CompilationState {
     }
 
     RoundStart beginActiveRound() {
-        Map<String, SwiftModel.Kind> previous =
-                new LinkedHashMap<String, SwiftModel.Kind>(pendingModels);
+        Map<String, ModelRegistration> previous =
+                new LinkedHashMap<String, ModelRegistration>(pendingModels);
         // SwiftModel and its resolved logical fields own round-scoped TypeMirror views. Historical
         // roots are deliberately re-extracted below, so retaining either result would cache javac
         // mirrors across rounds.
@@ -72,8 +73,12 @@ public final class CompilationState {
         pendingModels.clear();
     }
 
-    public void markPending(String typeName, SwiftModel.Kind kind) {
-        pendingModels.put(typeName, kind);
+    public void markPending(
+            String typeName,
+            SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect) {
+        ModelRegistration registration = new ModelRegistration(typeName, kind, dialect);
+        pendingModels.put(registration.key(), registration);
     }
 
     public boolean beginModelValidation(String identity, boolean forceRevalidation) {
@@ -85,7 +90,7 @@ public final class CompilationState {
     }
 
     public void storeResolvedModel(SwiftModel model) {
-        resolvedModels.put(model.identity(), model);
+        resolvedModels.put(model.cacheKey(), model);
     }
 
     public void removeModel(String identity) {
@@ -98,13 +103,18 @@ public final class CompilationState {
      * registry exposes the container state, no model, processed marker, budget reservation, or
      * diagnostic anchor for the former exact model remains observable.
      */
-    public boolean migrateSourceModelToContainer(String name, String identity) {
-        String registeredIdentity = sourceRoots.modelIdentity(name);
-        if (!sourceRoots.migrateModelToContainer(name)) {
+    public boolean migrateSourceModelToContainer(
+            String name,
+            ThriftAnnotationDialect dialect,
+            String identity) {
+        List<String> registeredIdentities = sourceRoots.modelIdentities(name);
+        if (!sourceRoots.migrateModelToContainer(name, dialect)) {
             return false;
         }
-        releaseModelIdentity(registeredIdentity);
-        if (!identity.equals(registeredIdentity)) {
+        for (String registeredIdentity : registeredIdentities) {
+            releaseModelIdentity(registeredIdentity);
+        }
+        if (!registeredIdentities.contains(identity)) {
             // A completed javac placeholder can produce a more precise exact identity in the
             // migration round. Clear both views before exposing the container classification.
             releaseModelIdentity(identity);
@@ -125,7 +135,7 @@ public final class CompilationState {
     }
 
     public void storeValidationResult(ModelValidation validation) {
-        validationResults.put(validation.model().identity(), validation);
+        validationResults.put(validation.model().cacheKey(), validation);
     }
 
     public List<ModelValidation> validationResults() {
@@ -176,13 +186,14 @@ public final class CompilationState {
     void registerSourceModel(
             String name,
             SwiftModel.Kind kind,
-            String identity) {
-        sourceRoots.registerModel(name, kind, identity);
-        releaseReferencedIdentity(identity);
+            ThriftAnnotationDialect dialect,
+            String cacheKey) {
+        sourceRoots.registerModel(name, kind, dialect, cacheKey);
+        releaseReferencedIdentity(cacheKey);
     }
 
-    void registerSourceContainer(String name) {
-        sourceRoots.registerContainer(name);
+    void registerSourceContainer(String name, ThriftAnnotationDialect dialect) {
+        sourceRoots.registerContainer(name, dialect);
     }
 
     public boolean isSourceModelName(String name) {
@@ -193,11 +204,11 @@ public final class CompilationState {
         return sourceRoots.isModelIdentity(identity);
     }
 
-    Map<String, SwiftModel.Kind> historicalSourceModels() {
+    Map<String, ModelRegistration> historicalSourceModels() {
         return sourceRoots.historicalModels();
     }
 
-    Set<String> historicalSourceContainers() {
+    Map<String, ThriftAnnotationDialect> historicalSourceContainers() {
         return sourceRoots.historicalContainers();
     }
 }

@@ -19,6 +19,8 @@ public final class SwiftModel {
     private final TypeElement type;
     private final DeclaredType declaredType;
     private final String identity;
+    private final String cacheKey;
+    private final ThriftAnnotationDialect dialect;
     private final TypeElement builder;
     private final List<FieldPart> fieldParts;
     private final List<ExecutableElement> constructionExecutables;
@@ -30,6 +32,8 @@ public final class SwiftModel {
             TypeElement type,
             DeclaredType declaredType,
             String identity,
+            String cacheKey,
+            ThriftAnnotationDialect dialect,
             TypeElement builder,
             List<FieldPart> fieldParts,
             List<ExecutableElement> constructionExecutables,
@@ -39,6 +43,8 @@ public final class SwiftModel {
         this.type = type;
         this.declaredType = declaredType;
         this.identity = identity;
+        this.cacheKey = cacheKey;
+        this.dialect = dialect;
         this.builder = builder;
         this.fieldParts = immutableCopy(fieldParts);
         this.constructionExecutables = immutableCopy(constructionExecutables);
@@ -60,6 +66,14 @@ public final class SwiftModel {
 
     public String identity() {
         return identity;
+    }
+
+    public String cacheKey() {
+        return cacheKey;
+    }
+
+    public ThriftAnnotationDialect dialect() {
+        return dialect;
     }
 
     public TypeElement builder() {

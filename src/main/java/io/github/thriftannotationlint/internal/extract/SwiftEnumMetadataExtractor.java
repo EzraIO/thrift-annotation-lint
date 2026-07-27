@@ -44,7 +44,7 @@ final class SwiftEnumMetadataExtractor {
             List<Finding> findings) {
         List<ExecutableElement> methods = new ArrayList<ExecutableElement>();
         for (ExecutableElement method
-                : ElementFilter.methodsIn(elements.getAllMembers(enumType))) {
+                : ElementFilter.methodsIn(memberResolver.allMembers(enumType))) {
             // Class.getMethods exposes the override, so an unannotated override hides an
             // annotated interface declaration while an inherited default remains visible.
             if (ThriftAnnotations.has(method, dialect.thriftEnumValue())) {
@@ -64,6 +64,14 @@ final class SwiftEnumMetadataExtractor {
                     methods.get(1),
                     "Enum '" + enumType.getQualifiedName()
                             + "' must declare at most one @ThriftEnumValue method."));
+        }
+        else if (methods.isEmpty()
+                && dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+            findings.add(Finding.error(
+                    DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
+                    enumType,
+                    "Drift enum '" + enumType.getQualifiedName()
+                            + "' must declare exactly one @ThriftEnumValue method."));
         }
         for (ExecutableElement method : methods) {
             // Runtime metadata validates the reflected declaration. Generic substitution at the

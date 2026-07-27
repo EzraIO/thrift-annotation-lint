@@ -26,8 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class InternalPackageArchitectureTest {
     private static final Path MAIN_PACKAGE = Paths.get(
             "src/main/java/io/github/thriftannotationlint");
-    private static final Pattern INTERNAL_IMPORT = Pattern.compile(
-            "import io\\.github\\.thriftannotationlint\\.internal\\.([^.]+)\\.");
+    private static final Pattern INTERNAL_REFERENCE = Pattern.compile(
+            "io\\.github\\.thriftannotationlint\\.internal\\.([a-z]+)\\.");
 
     @Test
     void rootProductionPackageContainsOnlyTheSupportedProcessorEntryPoint()
@@ -55,7 +55,7 @@ class InternalPackageArchitectureTest {
         allowed.put("types", packages("model"));
         allowed.put("diagnostic", packages("config", "model"));
         allowed.put("extract", packages("bytecode", "diagnostic", "model", "types"));
-        allowed.put("validation", packages("diagnostic", "extract", "model", "types"));
+        allowed.put("validation", packages("diagnostic", "model", "types"));
         allowed.put("planning", packages(
                 "config", "diagnostic", "extract", "model", "types", "validation"));
 
@@ -74,9 +74,9 @@ class InternalPackageArchitectureTest {
                 assertFalse(
                         text.contains("import io.github.thriftannotationlint.ThriftAnnotationLintProcessor;"),
                         source + " must not depend on the public processor facade");
-                Matcher imports = INTERNAL_IMPORT.matcher(text);
-                while (imports.find()) {
-                    String dependency = imports.group(1);
+                Matcher references = INTERNAL_REFERENCE.matcher(text);
+                while (references.find()) {
+                    String dependency = references.group(1);
                     if (!owner.equals(dependency)) {
                         assertTrue(
                                 allowed.get(owner).contains(dependency),
@@ -85,6 +85,24 @@ class InternalPackageArchitectureTest {
                 }
             }
         }
+    }
+
+    @Test
+    void orchestrationAndLogicalResolutionHaveDedicatedOwners() {
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/planning/RoundValidationEngine.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/validation/LogicalFieldResolver.java")));
+        assertFalse(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/LogicalFieldResolver.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/types/ThriftTypeInspector.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/types/WireTypeClassifier.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/types/NormalizedWireTypeFormatter.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/types/CarrierShapeClassifier.java")));
     }
 
     @Test

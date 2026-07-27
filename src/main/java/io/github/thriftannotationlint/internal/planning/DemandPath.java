@@ -2,47 +2,43 @@ package io.github.thriftannotationlint.internal.planning;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /** Immutable ancestry used to detect exact and expanding generic demand cycles. */
 final class DemandPath {
-    private final Map<String, List<ExactInstance>> instancesByType;
+    private final DemandPath parent;
+    private final String typeName;
+    private final ExactInstance instance;
 
-    private DemandPath(Map<String, List<ExactInstance>> instancesByType) {
-        this.instancesByType = new LinkedHashMap<String, List<ExactInstance>>();
-        for (Map.Entry<String, List<ExactInstance>> entry : instancesByType.entrySet()) {
-            this.instancesByType.put(
-                    entry.getKey(),
-                    Collections.unmodifiableList(
-                            new ArrayList<ExactInstance>(entry.getValue())));
-        }
+    private DemandPath(DemandPath parent, String typeName, ExactInstance instance) {
+        this.parent = parent;
+        this.typeName = typeName;
+        this.instance = instance;
     }
 
     static DemandPath initial(String typeName, ExactInstance instance) {
-        Map<String, List<ExactInstance>> values =
-                new LinkedHashMap<String, List<ExactInstance>>();
-        values.put(typeName, Collections.singletonList(instance));
-        return new DemandPath(values);
+        return new DemandPath(null, typeName, instance);
     }
 
     List<ExactInstance> instances(String typeName) {
-        return instancesByType.get(typeName);
+        List<ExactInstance> result = new ArrayList<ExactInstance>();
+        for (DemandPath current = this; current != null; current = current.parent) {
+            if (current.typeName.equals(typeName)) {
+                result.add(current.instance);
+            }
+        }
+        if (result.isEmpty()) {
+            return null;
+        }
+        Collections.reverse(result);
+        return Collections.unmodifiableList(result);
     }
 
     DemandPath append(String typeName, ExactInstance instance) {
-        Map<String, List<ExactInstance>> copy =
-                new LinkedHashMap<String, List<ExactInstance>>();
-        for (Map.Entry<String, List<ExactInstance>> entry : instancesByType.entrySet()) {
-            copy.put(entry.getKey(), new ArrayList<ExactInstance>(entry.getValue()));
-        }
-        List<ExactInstance> instances = copy.get(typeName);
-        if (instances == null) {
-            instances = new ArrayList<ExactInstance>();
-            copy.put(typeName, instances);
-        }
-        instances.add(instance);
-        return new DemandPath(copy);
+        return new DemandPath(this, typeName, instance);
+    }
+
+    DemandPath parent() {
+        return parent;
     }
 }

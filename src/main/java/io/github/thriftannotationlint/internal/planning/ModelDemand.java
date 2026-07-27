@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.planning;
 
 import io.github.thriftannotationlint.internal.model.SwiftModel;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -13,6 +14,7 @@ public final class ModelDemand {
     final DeclaredType declaredType;
     final TypeMirror requestedType;
     final String identity;
+    final ThriftAnnotationDialect dialect;
     final SwiftModel.Kind kind;
     final Element diagnosticAnchor;
     final DemandPath path;
@@ -23,6 +25,7 @@ public final class ModelDemand {
             DeclaredType declaredType,
             TypeMirror requestedType,
             String identity,
+            ThriftAnnotationDialect dialect,
             SwiftModel.Kind kind,
             Element diagnosticAnchor,
             DemandPath path,
@@ -31,6 +34,7 @@ public final class ModelDemand {
         this.declaredType = declaredType;
         this.requestedType = requestedType;
         this.identity = identity;
+        this.dialect = dialect;
         this.kind = kind;
         this.diagnosticAnchor = diagnosticAnchor;
         this.path = path;
@@ -51,6 +55,14 @@ public final class ModelDemand {
 
     public String identity() {
         return identity;
+    }
+
+    public String cacheKey() {
+        return dialect.name() + "\u0000" + identity;
+    }
+
+    public ThriftAnnotationDialect dialect() {
+        return dialect;
     }
 
     public SwiftModel.Kind kind() {

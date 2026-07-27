@@ -1,6 +1,12 @@
 package io.github.thriftannotationlint.internal.extract;
 
 import io.github.thriftannotationlint.CompilerTestSupport;
+import io.github.thriftannotationlint.internal.planning.CompilationState;
+import io.github.thriftannotationlint.internal.planning.DemandClosure;
+import io.github.thriftannotationlint.internal.planning.ModelDemand;
+import io.github.thriftannotationlint.internal.planning.RoundPlanner;
+import io.github.thriftannotationlint.internal.types.IncompleteTypeGate;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +32,7 @@ import java.util.Set;
 import static io.github.thriftannotationlint.CompilerTestSupport.compileWithAdditionalProcessor;
 import static io.github.thriftannotationlint.CompilerTestSupport.source;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class SwiftMemberResolverOwnerTest {
     @Test
@@ -44,6 +51,28 @@ final class SwiftMemberResolverOwnerTest {
         result.assertSucceeded();
         result.assertNoThriftAnnotationLintDiagnostics();
         assertTrue(probe.methodVariableRestored);
+        assertEquals(2, probe.memberEnumerations);
+    }
+
+    @Test
+    void plannerAndExtractorShareOneRoundMemberEnumeration() {
+        SharedRoundCacheProbe probe = new SharedRoundCacheProbe();
+
+        CompilerTestSupport.CompilationResult result = compileWithAdditionalProcessor(
+                probe,
+                source("example.EnumValue",
+                        "package example;",
+                        "public interface EnumValue {",
+                        "  @com.facebook.swift.codec.ThriftEnumValue",
+                        "  default int value() { return 1; }",
+                        "}"),
+                source("example.InheritedEnumFixture",
+                        "package example;",
+                        "public enum InheritedEnumFixture implements EnumValue { READY }"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+        assertEquals(1, probe.memberEnumerations);
     }
 
     private abstract static class ProbeProcessor extends AbstractProcessor {
@@ -61,6 +90,7 @@ final class SwiftMemberResolverOwnerTest {
     private static final class ExecutableOwnerProbe extends ProbeProcessor {
         private boolean inspected;
         private boolean methodVariableRestored;
+        private int memberEnumerations;
 
         @Override
         public boolean process(
@@ -75,6 +105,18 @@ final class SwiftMemberResolverOwnerTest {
                 return false;
             }
             inspected = true;
+
+            MemberResolutionMetrics metrics = new MemberResolutionMetrics();
+            SwiftMemberResolver cachedResolver = new SwiftMemberResolver(
+                    processingEnv.getElementUtils(), processingEnv.getTypeUtils(), metrics);
+            cachedResolver.beginRound();
+            cachedResolver.effectiveMethods(fixture, "example.Missing", false);
+            cachedResolver.effectiveMethods(fixture, "example.Missing", false);
+            cachedResolver.hierarchy(fixture);
+            cachedResolver.hierarchy(fixture);
+            cachedResolver.beginRound();
+            cachedResolver.effectiveMethods(fixture, "example.Missing", false);
+            memberEnumerations = metrics.memberEnumerations();
 
             ExecutableElement method = method(fixture, "value");
             TypeElement owner = nestedType(fixture, "Owner");
@@ -108,6 +150,63 @@ final class SwiftMemberResolverOwnerTest {
             methodVariableRestored = argument.getKind() == javax.lang.model.type.TypeKind.TYPEVAR
                     && ((TypeVariable) argument).asElement().equals(
                     method.getTypeParameters().get(0));
+            return false;
+        }
+    }
+
+    private static final class SharedRoundCacheProbe extends ProbeProcessor {
+        private boolean inspected;
+        private int memberEnumerations;
+
+        @Override
+        public boolean process(
+                Set<? extends TypeElement> annotations,
+                RoundEnvironment roundEnvironment) {
+            if (inspected || roundEnvironment.processingOver()) {
+                return false;
+            }
+            TypeElement fixture = processingEnv.getElementUtils()
+                    .getTypeElement("example.InheritedEnumFixture");
+            if (fixture == null) {
+                return false;
+            }
+            inspected = true;
+
+            MemberResolutionMetrics metrics = new MemberResolutionMetrics();
+            SwiftMemberResolver memberResolver = new SwiftMemberResolver(
+                    processingEnv.getElementUtils(), processingEnv.getTypeUtils(), metrics);
+            ThriftTypeInspector typeInspector = new ThriftTypeInspector(
+                    processingEnv.getTypeUtils(), processingEnv.getElementUtils());
+            CompilationState state = new CompilationState(16);
+            SwiftModelClassifier modelClassifier = new SwiftModelClassifier();
+            DemandClosure demandClosure = new DemandClosure(typeInspector, modelClassifier);
+            RoundPlanner planner = new RoundPlanner(
+                    processingEnv,
+                    state,
+                    typeInspector,
+                    modelClassifier,
+                    demandClosure,
+                    memberResolver);
+            SwiftModelExtractor extractor = new SwiftModelExtractor(
+                    processingEnv,
+                    typeInspector,
+                    new IncompleteTypeGate(),
+                    memberResolver);
+
+            extractor.beginRound();
+            RoundPlanner.Plan plan = planner.plan(roundEnvironment);
+            for (ModelDemand demand : plan.modelDemands()) {
+                if (demand.type().equals(fixture)) {
+                    extractor.extract(
+                            demand.declaredType(),
+                            demand.kind(),
+                            demand.identity(),
+                            demand.cacheKey(),
+                            demand.dialect(),
+                            state.compilationTypes());
+                }
+            }
+            memberEnumerations = metrics.memberEnumerations();
             return false;
         }
     }

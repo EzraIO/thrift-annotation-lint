@@ -8,7 +8,7 @@ import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 import io.github.thriftannotationlint.internal.model.ThriftFieldData;
 import io.github.thriftannotationlint.internal.model.ElementNames;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
@@ -22,9 +22,9 @@ import java.util.Set;
 
 /** Applies rules that operate on already-resolved logical fields. */
 final class LogicalFieldValidator {
-    private final SwiftTypeInspector typeInspector;
+    private final ThriftTypeInspector typeInspector;
 
-    LogicalFieldValidator(SwiftTypeInspector typeInspector) {
+    LogicalFieldValidator(ThriftTypeInspector typeInspector) {
         this.typeInspector = typeInspector;
     }
 
@@ -242,6 +242,7 @@ final class LogicalFieldValidator {
             ResolvedLogicalFields.LogicalField field,
             List<Finding> findings) {
         List<String> normalizedTypes = new ArrayList<String>();
+        List<String> carrierShapes = new ArrayList<String>();
         Set<String> distinctTypes = new LinkedHashSet<String>();
         for (FieldPart part : field.parts()) {
             TypeMirror type = part.javaType();
@@ -250,9 +251,10 @@ final class LogicalFieldValidator {
             }
             String normalizedType = typeInspector.normalizedType(
                     type,
-                    field.isRecursiveReference());
+                    field.isRecursiveReference(),
+                    model.dialect());
             distinctTypes.add(type.toString());
-            if (normalizedType == null || !typeInspector.isSupported(type)) {
+            if (normalizedType == null || !typeInspector.isSupported(type, model.dialect())) {
                 findings.add(Finding.error(
                         DiagnosticCode.UNSUPPORTED_JAVA_TYPE,
                         part.element(),
@@ -261,8 +263,12 @@ final class LogicalFieldValidator {
                 break;
             }
             boolean compatible = true;
-            for (String previousType : normalizedTypes) {
-                if (!typeInspector.areCompatibleNormalizedTypes(previousType, normalizedType)) {
+            String carrierShape = typeInspector.carrierShape(type, model.dialect());
+            for (int index = 0; index < normalizedTypes.size(); index++) {
+                if (!typeInspector.areCompatibleNormalizedTypes(
+                        normalizedTypes.get(index), normalizedType)
+                        || !typeInspector.areCompatibleCarrierShapes(
+                                carrierShapes.get(index), carrierShape)) {
                     compatible = false;
                     break;
                 }
@@ -277,6 +283,7 @@ final class LogicalFieldValidator {
                 break;
             }
             normalizedTypes.add(normalizedType);
+            carrierShapes.add(carrierShape);
         }
     }
 
@@ -286,13 +293,13 @@ final class LogicalFieldValidator {
             List<Finding> findings) {
         for (FieldPart part : field.parts()) {
             TypeMirror javaType = part.javaType();
-            if (!typeInspector.isSupported(javaType)) {
+            if (!typeInspector.isSupported(javaType, model.dialect())) {
                 continue;
             }
             boolean unsafeRead = part.isReadable()
-                    && !typeInspector.providesCanonicalValue(javaType);
+                    && !typeInspector.providesCanonicalValue(javaType, model.dialect());
             boolean unsafeWrite = part.isWritable()
-                    && !typeInspector.acceptsDecodedValue(javaType);
+                    && !typeInspector.acceptsDecodedValue(javaType, model.dialect());
             if (!unsafeRead && !unsafeWrite) {
                 continue;
             }
@@ -304,8 +311,10 @@ final class LogicalFieldValidator {
                     part.element(),
                     "Thrift model '" + model.displayName() + "' field '"
                             + field.displayName() + "' uses Java type '" + javaType
-                            + "' on a " + direction + " path that is incompatible with Swift's "
-                            + "canonical '" + typeInspector.canonicalDecodedTypeName(javaType)
+                            + "' on a " + direction + " path that is incompatible with "
+                            + model.dialect().runtimeName() + "'s "
+                            + "canonical '" + typeInspector.canonicalDecodedTypeName(
+                                    javaType, model.dialect())
                             + "' codec shape. Use compatible container types at every nesting "
                             + "level."));
         }

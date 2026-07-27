@@ -1,12 +1,11 @@
 package io.github.thriftannotationlint.internal.validation;
 
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
-import io.github.thriftannotationlint.internal.extract.LogicalFieldResolver;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 import io.github.thriftannotationlint.internal.model.ElementNames;
-import io.github.thriftannotationlint.internal.types.SwiftTypeInspector;
+import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import java.util.ArrayList;
@@ -24,7 +23,7 @@ public final class SwiftModelValidator {
 
     public SwiftModelValidator(
             ProcessingEnvironment processingEnvironment,
-            SwiftTypeInspector typeInspector) {
+            ThriftTypeInspector typeInspector) {
         this.logicalFieldResolver = new LogicalFieldResolver();
         this.logicalFieldValidator = new LogicalFieldValidator(typeInspector);
         this.unionValidator = new SwiftUnionValidator(processingEnvironment.getTypeUtils());
