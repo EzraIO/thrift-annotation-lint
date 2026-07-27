@@ -1,5 +1,8 @@
 package io.github.thriftannotationlint;
 
+import io.github.thriftannotationlint.internal.config.ProcessorOptions;
+import io.github.thriftannotationlint.internal.planning.ValidationSession;
+
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -15,8 +18,8 @@ import java.util.Set;
         ThriftAnnotationLintProcessor.MAX_EXACT_MODELS_OPTION
 })
 public final class ThriftAnnotationLintProcessor extends AbstractProcessor {
-    public static final String MODE_OPTION = "thrift.annotation.lint.mode";
-    public static final String MAX_EXACT_MODELS_OPTION = "thrift.annotation.lint.maxExactModels";
+    public static final String MODE_OPTION = ProcessorOptions.MODE_OPTION;
+    public static final String MAX_EXACT_MODELS_OPTION = ProcessorOptions.MAX_EXACT_MODELS_OPTION;
 
     private ValidationSession session;
 

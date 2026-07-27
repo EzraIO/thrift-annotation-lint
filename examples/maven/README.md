@@ -76,7 +76,7 @@ example.
 
 ## Run one case manually
 
-Install the processor snapshot from this checkout, then select a case directory:
+Install the processor from this checkout, then select a case directory:
 
 ~~~
 mvn -Dmaven.test.skip=true clean install

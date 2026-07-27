@@ -26,27 +26,27 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-final class CompilerTestSupport {
+public final class CompilerTestSupport {
     private static final Pattern RULE_PREFIX = Pattern.compile("^\\[AW\\d{4}] .+");
     private static final Pattern CJK_CHARACTER = Pattern.compile("[\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]");
 
     private CompilerTestSupport() {
     }
 
-    static Source source(String className, String... lines) {
+    public static Source source(String className, String... lines) {
         return new Source(className, String.join("\n", lines));
     }
 
-    static CompilationResult compile(Source... sources) {
+    public static CompilationResult compile(Source... sources) {
         return compileWithOptions(Collections.<String>emptyList(), sources);
     }
 
-    static CompilationResult compileWithOptions(List<String> processorOptions, Source... sources) {
+    public static CompilationResult compileWithOptions(List<String> processorOptions, Source... sources) {
         return compileWithLanguageLevel(
                 "8", processorOptions, Collections.<Processor>emptyList(), sources);
     }
 
-    static CompilationResult compileAgainstClasspath(Source[] dependencySources, Source... sources) {
+    public static CompilationResult compileAgainstClasspath(Source[] dependencySources, Source... sources) {
         return compileAgainstClasspath(
                 Collections.<String>emptyList(),
                 null,
@@ -55,7 +55,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileAgainstMutatedClasspath(
+    public static CompilationResult compileAgainstMutatedClasspath(
             DependencyOutputMutator mutator,
             Source[] dependencySources,
             Source... sources) {
@@ -67,7 +67,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileAgainstClasspathWithAdditionalProcessor(
+    public static CompilationResult compileAgainstClasspathWithAdditionalProcessor(
             Processor processor,
             Source[] dependencySources,
             Source... sources) {
@@ -79,7 +79,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileAgainstClasspathWithoutDebug(
+    public static CompilationResult compileAgainstClasspathWithoutDebug(
             Source[] dependencySources,
             Source... sources) {
         return compileAgainstClasspath(
@@ -90,7 +90,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileAgainstClasspathWithMethodParametersOnly(
+    public static CompilationResult compileAgainstClasspathWithMethodParametersOnly(
             Source[] dependencySources,
             Source... sources) {
         return compileAgainstClasspath(
@@ -247,7 +247,7 @@ final class CompilerTestSupport {
         }
     }
 
-    static CompilationResult compileWithLanguageLevel(String languageLevel, Source... sources) {
+    public static CompilationResult compileWithLanguageLevel(String languageLevel, Source... sources) {
         return compileWithLanguageLevel(
                 languageLevel,
                 Collections.<String>emptyList(),
@@ -255,7 +255,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileWithAdditionalProcessor(
+    public static CompilationResult compileWithAdditionalProcessor(
             Processor processor,
             Source... sources) {
         return compileWithLanguageLevel(
@@ -265,7 +265,7 @@ final class CompilerTestSupport {
                 sources);
     }
 
-    static CompilationResult compileWithOptionsAndAdditionalProcessor(
+    public static CompilationResult compileWithOptionsAndAdditionalProcessor(
             List<String> processorOptions,
             Processor processor,
             Source... sources) {
@@ -352,8 +352,8 @@ final class CompilerTestSupport {
         }
     }
 
-    interface DependencyOutputMutator {
-        void mutate(Path dependencyOutput) throws IOException;
+    public interface DependencyOutputMutator {
+        public void mutate(Path dependencyOutput) throws IOException;
     }
 
     /**
@@ -430,11 +430,11 @@ final class CompilerTestSupport {
         }
     }
 
-    static final class CompilationResult {
+    public static final class CompilationResult {
         private final boolean successful;
         private final List<Diagnostic<? extends JavaFileObject>> diagnostics;
 
-        CompilationResult(boolean successful, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
+        public CompilationResult(boolean successful, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
             this.successful = successful;
             List<Diagnostic<? extends JavaFileObject>> frozen =
                     new ArrayList<Diagnostic<? extends JavaFileObject>>();
@@ -444,11 +444,11 @@ final class CompilerTestSupport {
             this.diagnostics = Collections.unmodifiableList(frozen);
         }
 
-        boolean isSuccessful() {
+        public boolean isSuccessful() {
             return successful;
         }
 
-        List<Diagnostic<? extends JavaFileObject>> thriftAnnotationLintDiagnostics() {
+        public List<Diagnostic<? extends JavaFileObject>> thriftAnnotationLintDiagnostics() {
             List<Diagnostic<? extends JavaFileObject>> result = new ArrayList<Diagnostic<? extends JavaFileObject>>();
             for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
                 if (message(diagnostic).startsWith("[AW")) {
@@ -458,7 +458,7 @@ final class CompilerTestSupport {
             return result;
         }
 
-        Diagnostic<? extends JavaFileObject> diagnostic(String code) {
+        public Diagnostic<? extends JavaFileObject> diagnostic(String code) {
             String prefix = "[" + code + "]";
             for (Diagnostic<? extends JavaFileObject> diagnostic : thriftAnnotationLintDiagnostics()) {
                 if (message(diagnostic).startsWith(prefix)) {
@@ -469,7 +469,7 @@ final class CompilerTestSupport {
             return null;
         }
 
-        boolean hasCode(String code) {
+        public boolean hasCode(String code) {
             String prefix = "[" + code + "]";
             for (Diagnostic<? extends JavaFileObject> diagnostic : thriftAnnotationLintDiagnostics()) {
                 if (message(diagnostic).startsWith(prefix)) {
@@ -479,7 +479,7 @@ final class CompilerTestSupport {
             return false;
         }
 
-        String diagnosticSummary() {
+        public String diagnosticSummary() {
             StringBuilder builder = new StringBuilder();
             for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
                 if (builder.length() > 0) {
@@ -494,23 +494,23 @@ final class CompilerTestSupport {
             return builder.toString();
         }
 
-        void assertSucceeded() {
+        public void assertSucceeded() {
             Assertions.assertTrue(successful, "Compilation should succeed:\n" + diagnosticSummary());
             assertDiagnosticContract();
         }
 
-        void assertFailedWith(String code) {
+        public void assertFailedWith(String code) {
             Assertions.assertFalse(successful, "Compilation should fail with " + code + ":\n" + diagnosticSummary());
             diagnostic(code);
             assertDiagnosticContract();
         }
 
-        void assertNoThriftAnnotationLintDiagnostics() {
+        public void assertNoThriftAnnotationLintDiagnostics() {
             Assertions.assertTrue(thriftAnnotationLintDiagnostics().isEmpty(),
                     "Expected no ThriftAnnotationLint diagnostics:\n" + diagnosticSummary());
         }
 
-        void assertDiagnosticContract() {
+        public void assertDiagnosticContract() {
             for (Diagnostic<? extends JavaFileObject> diagnostic : thriftAnnotationLintDiagnostics()) {
                 String message = message(diagnostic);
                 Assertions.assertTrue(RULE_PREFIX.matcher(message).matches(),
@@ -529,10 +529,10 @@ final class CompilerTestSupport {
         }
     }
 
-    static final class Source extends SimpleJavaFileObject {
+    public static final class Source extends SimpleJavaFileObject {
         private final String content;
 
-        Source(String className, String content) {
+        public Source(String className, String content) {
             super(URI.create("string:///" + className.replace('.', '/') + JavaFileObject.Kind.SOURCE.extension),
                     JavaFileObject.Kind.SOURCE);
             this.content = content;

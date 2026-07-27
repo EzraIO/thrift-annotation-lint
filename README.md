@@ -1,31 +1,138 @@
 # ThriftAnnotationLint
 
-> A `javac` annotation processor that validates Java `@Thrift*` models before runtime.
+[![CI](https://github.com/EzraIO/thrift-annotation-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/EzraIO/thrift-annotation-lint/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/EzraIO/thrift-annotation-lint?include_prereleases&sort=semver)](https://github.com/EzraIO/thrift-annotation-lint/releases)
+[![Java 8+](https://img.shields.io/badge/Java-8%2B-007396)](#compatibility)
+[![License](https://img.shields.io/github/license/EzraIO/thrift-annotation-lint)](LICENSE)
+
+> Catch invalid Facebook Swift `@Thrift*` models during compilation—not during
+> application startup or codec initialization.
 
 ThriftAnnotationLint validates annotation-based Java models for Facebook Swift during
-compilation. It moves model metadata failures from application startup or codec
-initialization into `javac`, where developers receive an actionable source
-diagnostic before packaging and deployment.
+`javac`. Diagnostics point to the offending model element, carry stable `AWxxxx`
+rule codes, and fail the build before an invalid model reaches packaging or
+deployment.
 
-> **Project status:** `0.1.0-SNAPSHOT` is a preview. The processor is verified
+> **Project status:** `0.1.0` is the first preview release. The processor is verified
 > against the public Facebook Swift `0.19.2`, `0.20.0`, `0.21.1`, `0.22.1`, and
 > `0.23.1` annotation and runtime metadata contracts, plus deliberate
 > compile-time safety extensions described below. Its rule and diagnostic
 > contracts may evolve before `1.0.0`.
 
-## Why ThriftAnnotationLint?
+## Catch a real metadata failure before runtime
 
-Annotation-based models avoid generated IDL classes, but Facebook Swift normally
-discovers many invalid definitions only when runtime metadata or codecs are
-created. ThriftAnnotationLint keeps the annotation-based workflow and adds an earlier
-feedback boundary:
+This model compiles as ordinary Java, but two logical fields reuse the same
+Thrift field ID:
 
-```text
-Java source -> ThriftAnnotationLint processor -> javac diagnostics -> package/deploy
+```java
+@ThriftStruct
+public class DuplicateIds {
+    @ThriftField(7)
+    public String first;
+
+    @ThriftField(7)
+    public String second;
+}
 ```
 
-Diagnostics are in English, carry a stable `AWxxxx` rule code, and point to the
-model element or annotation value that caused the problem.
+Without an earlier check, the failure can surface only when Swift builds runtime
+metadata or a codec. ThriftAnnotationLint reports it at the second annotation:
+
+```text
+error: [AW2002] Thrift model 'example.DuplicateIds' uses field ID 7
+for different logical fields [first, second].
+```
+
+It also catches missing read/write paths, invalid constructors and builders,
+unsafe union definitions, incompatible Java types, undeclared recursive edges,
+and invalid exact generic models reached through source or classpath references.
+
+## Quick start
+
+ThriftAnnotationLint is not on Maven Central yet. Install the `v0.1.0` release
+JAR into your local Maven repository once, then use the normal Maven or Gradle
+annotation-processor configuration below.
+
+```bash
+curl -fLO https://github.com/EzraIO/thrift-annotation-lint/releases/download/v0.1.0/thrift-annotation-lint-0.1.0.jar
+mvn org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
+  -Dfile=thrift-annotation-lint-0.1.0.jar \
+  -DgroupId=io.github.thriftannotationlint \
+  -DartifactId=thrift-annotation-lint \
+  -Dversion=0.1.0 \
+  -Dpackaging=jar \
+  -DgeneratePom=true
+```
+
+### Maven
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>com.facebook.swift</groupId>
+        <artifactId>swift-annotations</artifactId>
+        <version>0.23.1</version>
+    </dependency>
+</dependencies>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.11.0</version>
+            <configuration>
+                <annotationProcessorPaths>
+                    <path>
+                        <groupId>io.github.thriftannotationlint</groupId>
+                        <artifactId>thrift-annotation-lint</artifactId>
+                        <version>0.1.0</version>
+                    </path>
+                </annotationProcessorPaths>
+                <compilerArgs>
+                    <arg>-Athrift.annotation.lint.mode=strict</arg>
+                </compilerArgs>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+### Gradle
+
+```groovy
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly "com.facebook.swift:swift-annotations:0.23.1"
+    annotationProcessor "io.github.thriftannotationlint:thrift-annotation-lint:0.1.0"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ["-Athrift.annotation.lint.mode=strict"]
+}
+```
+
+The JAR registers itself through the standard annotation-processor service file
+and declares Gradle aggregating behavior, so no explicit `-processor` class name
+is required.
+
+For an existing model base, start with `warning` mode and switch to `strict`
+after reviewing the findings. The runnable example catalog is available under
+[`examples/maven`](examples/maven/README.md).
+
+## What it catches
+
+- conflicting field IDs, names, requiredness, and IDL annotations;
+- missing extraction or injection paths and reflection-order ambiguity;
+- invalid constructors, builders, setter signatures, and member modifiers;
+- unsupported or incompatible Java and nested container types;
+- recursive model cycles that are not explicitly declared recursive;
+- unsafe union discriminators, construction paths, and payload IDs;
+- invalid enum value methods and non-converging exact generic model graphs.
 
 ## Supported scope
 
@@ -63,77 +170,6 @@ The preview does **not** validate:
 
 See [Rule reference](docs/rules.md) for the diagnostic categories and known
 runtime-only boundaries.
-
-## Installation
-
-The coordinates below describe the planned preview artifact. Until a release is
-published, build and install the project locally with `mvn install`.
-
-### Maven
-
-Keep the Swift annotations on the application compile classpath and place
-ThriftAnnotationLint on the annotation processor path:
-
-```xml
-<properties>
-    <thrift.annotation.lint.version>0.1.0-SNAPSHOT</thrift.annotation.lint.version>
-    <swift.version>0.23.1</swift.version>
-</properties>
-
-<dependencies>
-    <dependency>
-        <groupId>com.facebook.swift</groupId>
-        <artifactId>swift-annotations</artifactId>
-        <version>${swift.version}</version>
-    </dependency>
-</dependencies>
-
-<build>
-    <plugins>
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-compiler-plugin</artifactId>
-            <version>3.11.0</version>
-            <configuration>
-                <annotationProcessorPaths>
-                    <path>
-                        <groupId>io.github.thriftannotationlint</groupId>
-                        <artifactId>thrift-annotation-lint</artifactId>
-                        <version>${thrift.annotation.lint.version}</version>
-                    </path>
-                </annotationProcessorPaths>
-                <compilerArgs>
-                    <arg>-Athrift.annotation.lint.mode=strict</arg>
-                    <arg>-Athrift.annotation.lint.maxExactModels=512</arg>
-                </compilerArgs>
-            </configuration>
-        </plugin>
-    </plugins>
-</build>
-```
-
-### Gradle
-
-```groovy
-dependencies {
-    compileOnly "com.facebook.swift:swift-annotations:0.23.1"
-    annotationProcessor "io.github.thriftannotationlint:thrift-annotation-lint:0.1.0-SNAPSHOT"
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.compilerArgs += [
-        "-Athrift.annotation.lint.mode=strict",
-        "-Athrift.annotation.lint.maxExactModels=512"
-    ]
-}
-```
-
-The artifact declares the processor as Gradle-aggregating and registers it through
-the standard `javax.annotation.processing.Processor` service provider file. Aggregating
-classification is required because recursive-cycle validation relates multiple models in
-the same compilation. The processor accepts all annotation rounds so it can inspect a
-source enum whose only `@ThriftEnumValue` is inherited from a classpath interface; it
-does not claim annotations and exits immediately for unrelated source roots.
 
 ## Safety extensions over official Swift
 
@@ -187,12 +223,6 @@ and declarations later classified as containers do not create false `AW9003`
 diagnostics. Exceeding the budget reports `AW9003` instead of allowing a
 branching or non-converging metadata graph to exhaust the compiler. Raise it
 only for a reviewed finite graph.
-
-Example diagnostic:
-
-```text
-[AW2002] Thrift field id 1 is used by both 'displayName' and 'userName'.
-```
 
 ## Compatibility
 
@@ -313,7 +343,7 @@ From a source checkout, run:
 sh examples/maven/run-demo.sh
 ```
 
-The script installs the current snapshot into the local Maven repository, then
+The script installs the current checkout into the local Maven repository, then
 compiles a catalog of valid and intentionally invalid Swift models. It verifies
 every runnable stable user-facing rule category in warning mode, demonstrates
 strict rejection for duplicate IDs, and checks the always-error option and

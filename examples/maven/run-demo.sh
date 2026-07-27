@@ -133,7 +133,7 @@ expect_failure() {
     rm -f "$log_file"
 }
 
-printf '%s\n' 'Building and installing the local ThriftAnnotationLint snapshot...'
+printf '%s\n' 'Building and installing the local ThriftAnnotationLint checkout...'
 mvn -f "$project_root/pom.xml" --batch-mode --no-transfer-progress -Dmaven.test.skip=true clean install
 
 while IFS='|' read -r case_id kind code budget; do
