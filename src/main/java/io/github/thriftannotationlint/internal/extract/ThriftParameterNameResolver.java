@@ -3,8 +3,9 @@ package io.github.thriftannotationlint.internal.extract;
 import io.github.thriftannotationlint.internal.bytecode.ClasspathParameterNames;
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 import io.github.thriftannotationlint.internal.model.ElementNames;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -18,12 +19,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-/** Reproduces Swift's AnnotationParanamer/LVT/GeneralParanamer precedence. */
-final class SwiftParameterNameResolver {
+/** Resolves injection names with the parameter lookup rules of the selected codec dialect. */
+final class ThriftParameterNameResolver {
     private final Elements elements;
     private final ClasspathParameterNames classpathParameterNames;
 
-    SwiftParameterNameResolver(
+    ThriftParameterNameResolver(
             Elements elements,
             ClasspathParameterNames classpathParameterNames) {
         this.elements = elements;
@@ -32,6 +33,7 @@ final class SwiftParameterNameResolver {
 
     Result resolve(
             ExecutableElement executable,
+            ThriftAnnotationDialect dialect,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
         TypeElement owner = declaringType(executable);
@@ -48,6 +50,11 @@ final class SwiftParameterNameResolver {
 
         ClasspathParameterNames.LookupResult lookup = classpathParameterNames.find(executable);
         if (lookup.isInvalid()) {
+            if (dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+                // Drift 1.18 catches bytecode lookup failures and falls back to reflection names.
+                return new Result(
+                        generalParameterNames(executable), true, true, null, true, true);
+            }
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_METHOD_OR_CONSTRUCTOR,
                     executable,
@@ -60,13 +67,20 @@ final class SwiftParameterNameResolver {
             return new Result(
                     lookup.names(), true, false, null, false, true);
         }
+        if (dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+            // ParameterNames falls back to reflection, which yields argN without -parameters.
+            return new Result(
+                    generalParameterNames(executable), true, true, null, true, true);
+        }
         // Supported Swift releases ignore MethodParameters and deterministically fall back to
         // GeneralParanamer's argN names when no LocalVariableTable is present.
         return new Result(
                 generalParameterNames(executable), true, true, null, true, true);
     }
 
-    List<String> annotationNames(ExecutableElement executable) {
+    List<String> annotationNames(
+            ExecutableElement executable,
+            ThriftAnnotationDialect dialect) {
         List<String> names = new ArrayList<String>();
         for (VariableElement parameter : executable.getParameters()) {
             String name = null;
@@ -77,16 +91,17 @@ final class SwiftParameterNameResolver {
                 }
                 String annotationName =
                         ((TypeElement) annotationElement).getQualifiedName().toString();
-                if (SwiftAnnotations.THRIFT_FIELD.equals(annotationName)) {
+                if (dialect.thriftField().equals(annotationName)) {
                     AnnotationValue configuredName =
-                            SwiftAnnotations.explicitValue(annotation, "name");
-                    String thriftName = SwiftAnnotations.stringValue(configuredName);
+                            ThriftAnnotations.explicitValue(annotation, "name");
+                    String thriftName = ThriftAnnotations.stringValue(configuredName);
                     name = thriftName.isEmpty() ? null : thriftName;
                     break;
                 }
-                if ("javax.inject.Named".equals(annotationName)) {
+                if (dialect == ThriftAnnotationDialect.FACEBOOK_SWIFT
+                        && "javax.inject.Named".equals(annotationName)) {
                     // AnnotationParanamer preserves Named.value(), including its empty default.
-                    name = SwiftAnnotations.stringValue(elements, annotation, "value");
+                    name = ThriftAnnotations.stringValue(elements, annotation, "value");
                     break;
                 }
             }

@@ -2,7 +2,7 @@ package io.github.thriftannotationlint.internal.validation;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 import io.github.thriftannotationlint.internal.model.FieldPart;
 import io.github.thriftannotationlint.internal.model.ResolvedLogicalFields;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
@@ -94,7 +94,7 @@ final class LogicalFieldValidator {
         Set<Map<String, String>> nonEmptyMaps =
                 new LinkedHashSet<Map<String, String>>();
         for (FieldPart part : field.parts()) {
-            SwiftAnnotations.IdlAnnotations idl = part.thriftField().idlAnnotations();
+            ThriftAnnotations.IdlAnnotations idl = part.thriftField().idlAnnotations();
             if (!idl.duplicateKeys().isEmpty()) {
                 findings.add(Finding.error(
                         DiagnosticCode.CONFLICTING_IDL_ANNOTATIONS,

@@ -14,7 +14,7 @@ public final class ThriftFieldData {
     private final String explicitName;
     private final String requiredness;
     private final Boolean recursive;
-    private final SwiftAnnotations.IdlAnnotations idlAnnotations;
+    private final ThriftAnnotations.IdlAnnotations idlAnnotations;
 
     private ThriftFieldData(
             AnnotationMirror annotation,
@@ -24,7 +24,7 @@ public final class ThriftFieldData {
             String explicitName,
             String requiredness,
             Boolean recursive,
-            SwiftAnnotations.IdlAnnotations idlAnnotations) {
+            ThriftAnnotations.IdlAnnotations idlAnnotations) {
         this.annotation = annotation;
         this.idSource = idSource;
         this.id = id;
@@ -36,7 +36,20 @@ public final class ThriftFieldData {
     }
 
     public static ThriftFieldData from(Elements elements, Element element) {
-        return from(elements, SwiftAnnotations.find(element, SwiftAnnotations.THRIFT_FIELD));
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            AnnotationMirror annotation = ThriftAnnotations.find(element, dialect.thriftField());
+            if (annotation != null) {
+                return from(elements, annotation);
+            }
+        }
+        return empty();
+    }
+
+    public static ThriftFieldData from(
+            Elements elements,
+            Element element,
+            ThriftAnnotationDialect dialect) {
+        return from(elements, ThriftAnnotations.find(element, dialect.thriftField()));
     }
 
     public static ThriftFieldData from(Elements elements, AnnotationMirror annotation) {
@@ -44,26 +57,26 @@ public final class ThriftFieldData {
             return empty();
         }
 
-        AnnotationValue configuredId = SwiftAnnotations.explicitValue(annotation, "value");
+        AnnotationValue configuredId = ThriftAnnotations.explicitValue(annotation, "value");
         Short id = null;
         if (configuredId != null && configuredId.getValue() instanceof Number) {
             short candidate = ((Number) configuredId.getValue()).shortValue();
-            if (candidate != SwiftAnnotations.UNSET_FIELD_ID) {
+            if (candidate != ThriftAnnotations.UNSET_FIELD_ID) {
                 id = candidate;
             }
         }
 
-        String name = SwiftAnnotations.stringValue(elements, annotation, "name");
+        String name = ThriftAnnotations.stringValue(elements, annotation, "name");
         if (name.isEmpty()) {
             name = null;
         }
 
-        String requiredness = SwiftAnnotations.enumValue(elements, annotation, "requiredness");
+        String requiredness = ThriftAnnotations.enumValue(elements, annotation, "requiredness");
         if (requiredness == null) {
             requiredness = "UNSPECIFIED";
         }
 
-        String recursiveValue = SwiftAnnotations.enumValue(elements, annotation, "isRecursive");
+        String recursiveValue = ThriftAnnotations.enumValue(elements, annotation, "isRecursive");
         Boolean recursive = null;
         if ("TRUE".equals(recursiveValue)) {
             recursive = Boolean.TRUE;
@@ -72,18 +85,18 @@ public final class ThriftFieldData {
             recursive = Boolean.FALSE;
         }
 
-        SwiftAnnotations.IdlAnnotations idl =
-                SwiftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
-        if (recursive == null && idl.values().containsKey(SwiftAnnotations.RECURSIVE_IDL_KEY)) {
+        ThriftAnnotations.IdlAnnotations idl =
+                ThriftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
+        if (recursive == null && idl.values().containsKey(ThriftAnnotations.RECURSIVE_IDL_KEY)) {
             recursive = Boolean.valueOf(
-                    "true".equalsIgnoreCase(idl.values().get(SwiftAnnotations.RECURSIVE_IDL_KEY)));
+                    "true".equalsIgnoreCase(idl.values().get(ThriftAnnotations.RECURSIVE_IDL_KEY)));
         }
 
         return new ThriftFieldData(
                 annotation,
                 configuredId,
                 id,
-                SwiftAnnotations.booleanValue(elements, annotation, "isLegacyId"),
+                ThriftAnnotations.booleanValue(elements, annotation, "isLegacyId"),
                 name,
                 requiredness,
                 recursive,
@@ -99,7 +112,7 @@ public final class ThriftFieldData {
                 null,
                 "UNSPECIFIED",
                 null,
-                SwiftAnnotations.IdlAnnotations.empty());
+                ThriftAnnotations.IdlAnnotations.empty());
     }
 
     public AnnotationMirror annotation() {
@@ -130,7 +143,7 @@ public final class ThriftFieldData {
         return recursive;
     }
 
-    public SwiftAnnotations.IdlAnnotations idlAnnotations() {
+    public ThriftAnnotations.IdlAnnotations idlAnnotations() {
         return idlAnnotations;
     }
 }

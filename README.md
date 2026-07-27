@@ -5,17 +5,18 @@
 [![Java 8+](https://img.shields.io/badge/Java-8%2B-007396)](#compatibility)
 [![License](https://img.shields.io/github/license/EzraIO/thrift-annotation-lint)](LICENSE)
 
-> Catch invalid Facebook Swift `@Thrift*` models during compilation—not during
+> Catch invalid Facebook Swift or Airlift Drift `@Thrift*` models during compilation—not during
 > application startup or codec initialization.
 
-ThriftAnnotationLint validates annotation-based Java models for Facebook Swift during
+ThriftAnnotationLint validates annotation-based Java models for Facebook Swift and
+Airlift Drift during
 `javac`. Diagnostics point to the offending model element, carry stable `AWxxxx`
 rule codes, and fail the build before an invalid model reaches packaging or
 deployment.
 
 > **Project status:** `0.1.0` is the first preview release. The processor is verified
 > against the public Facebook Swift `0.19.2`, `0.20.0`, `0.21.1`, `0.22.1`, and
-> `0.23.1` annotation and runtime metadata contracts, plus deliberate
+> `0.23.1` contracts and the Airlift Drift `1.18` annotation contract, plus deliberate
 > compile-time safety extensions described below. Its rule and diagnostic
 > contracts may evolve before `1.0.0`.
 
@@ -68,11 +69,19 @@ mvn org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
 
 ```xml
 <dependencies>
+    <!-- Choose the annotation library used by your models. -->
     <dependency>
         <groupId>com.facebook.swift</groupId>
         <artifactId>swift-annotations</artifactId>
         <version>0.23.1</version>
     </dependency>
+    <!-- Airlift Drift alternative:
+    <dependency>
+        <groupId>io.airlift.drift</groupId>
+        <artifactId>drift-api</artifactId>
+        <version>1.18</version>
+    </dependency>
+    -->
 </dependencies>
 
 <build>
@@ -107,7 +116,10 @@ repositories {
 }
 
 dependencies {
+    // Use this for Facebook Swift models:
     compileOnly "com.facebook.swift:swift-annotations:0.23.1"
+    // Or this for Airlift Drift models:
+    // compileOnly "io.airlift.drift:drift-api:1.18"
     annotationProcessor "io.github.thriftannotationlint:thrift-annotation-lint:0.1.0"
 }
 
@@ -231,10 +243,11 @@ only for a reviewed finite graph.
 | Processor bytecode | Java 8 |
 | JDK used to compile applications | 8, 11, 17, 21 |
 | Facebook Swift | See the verified release matrix below |
+| Airlift Drift | `1.18` annotations verified; see notes below |
 | Maven | 3.6.1 or newer |
 
 The processor artifact has no runtime dependencies and uses only the standard
-JSR 269 compiler APIs. Facebook Swift and its transitive dependencies are used
+JSR 269 compiler APIs. Facebook Swift, Airlift Drift, and their transitive dependencies are used
 only by this project's test suite.
 
 | Official Swift version | Annotation/compiler fixtures | Official metadata and codec fixtures |
@@ -255,6 +268,14 @@ The codec guarantee covers Swift's default `CompilerThriftCodecFactory`.
 `ReflectionThriftCodecFactory` is a custom runtime configuration and has
 different union-builder invocation semantics; applications that select it must
 retain factory-specific integration tests.
+
+Airlift Drift `1.18` is the newest release whose published artifacts retain Java 8
+bytecode and is therefore the preview's verified Drift baseline. Newer Drift releases
+use the same core model annotations but require newer Java runtimes; they are not yet
+claimed as verified. Drift model discovery, fields, constructors, builders, unions,
+enums, IDL annotations, and shared Java type rules are supported. One model must use
+one annotation dialect consistently; mixing `com.facebook.swift.codec.*` and
+`io.airlift.drift.annotations.*` annotations is rejected.
 
 ## Compile-time and runtime boundary
 
@@ -308,6 +329,12 @@ injection parameters. It also mirrors
 ThriftFieldParanamer's all-parameters annotation-name rule, including ordered
 `@ThriftField(name=...)` and JSR-330 `@Named` annotations.
 
+Airlift Drift `1.18` instead checks `@ThriftField(name=...)`, then its parameter-name
+reader (method metadata, bytecode debug names, and finally reflection fallback). For
+deterministic build/runtime parity, Drift injection parameters should declare an explicit
+field ID or name when no stable bytecode name is available; the processor rejects an
+identity that would otherwise depend on compiler debug or `-parameters` settings.
+
 Annotation processors can also generate referenced types after an earlier
 round has inspected their consumers. ThriftAnnotationLint defers findings for explicitly
 unresolved shapes and rebuilds every historical source-root demand closure in
@@ -358,7 +385,7 @@ suite for each exact Swift release in the compatibility matrix on JDK 8. The
 project compiles its own processor with annotation processing disabled
 (`proc:none`) and validates the packaged service metadata through tests. The
 suite also runs official Swift metadata fixtures and builder/union codec round
-trips.
+trips, plus Drift annotation/compiler compatibility fixtures.
 
 Maintainers should read [Architecture and behavioral invariants](docs/architecture.md)
 before changing round handling, type resolution, extraction, validation, or
@@ -368,8 +395,8 @@ diagnostic routing.
 
 ThriftAnnotationLint is an independent project. It is not affiliated with, endorsed by, or
 an official component of the Apache Software Foundation, Meta, Facebook, or
-Airlift. Facebook Swift is a separate archived project and remains subject to
-its own license.
+Airlift. Facebook Swift and Airlift Drift are separate projects and remain subject to
+their own licenses.
 
 ThriftAnnotationLint is licensed under the
 [Apache License, Version 2.0](LICENSE).

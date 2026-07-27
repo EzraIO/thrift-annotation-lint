@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
@@ -38,13 +39,14 @@ final class SwiftEnumMetadataExtractor {
 
     List<ExecutableElement> extract(
             TypeElement enumType,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         List<ExecutableElement> methods = new ArrayList<ExecutableElement>();
         for (ExecutableElement method
                 : ElementFilter.methodsIn(elements.getAllMembers(enumType))) {
             // Class.getMethods exposes the override, so an unannotated override hides an
             // annotated interface declaration while an inherited default remains visible.
-            if (SwiftAnnotations.has(method, SwiftAnnotations.THRIFT_ENUM_VALUE)) {
+            if (ThriftAnnotations.has(method, dialect.thriftEnumValue())) {
                 methods.add(method);
             }
         }

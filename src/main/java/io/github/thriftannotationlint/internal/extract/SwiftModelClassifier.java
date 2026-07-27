@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 
@@ -13,11 +14,13 @@ public final class SwiftModelClassifier {
         if (type.getKind() == ElementKind.ENUM) {
             return SwiftModel.Kind.ENUM;
         }
-        if (SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_STRUCT)) {
-            return SwiftModel.Kind.STRUCT;
-        }
-        if (SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_UNION)) {
-            return SwiftModel.Kind.UNION;
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (ThriftAnnotations.has(type, dialect.thriftStruct())) {
+                return SwiftModel.Kind.STRUCT;
+            }
+            if (ThriftAnnotations.has(type, dialect.thriftUnion())) {
+                return SwiftModel.Kind.UNION;
+            }
         }
         return null;
     }

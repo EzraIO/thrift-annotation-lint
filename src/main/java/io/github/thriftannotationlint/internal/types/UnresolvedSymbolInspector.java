@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.types;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 
 import javax.lang.model.element.AnnotationMirror;
@@ -32,19 +33,17 @@ public final class UnresolvedSymbolInspector {
     public boolean hasUnresolvedSymbols(
             TypeElement type,
             DeclaredType declaredType,
-            SwiftModel.Kind kind) {
+            SwiftModel.Kind kind,
+            ThriftAnnotationDialect dialect) {
         if (containsErrorType(declaredType, new LinkedHashSet<String>())
                 || hasUnresolvedHierarchy(type, new LinkedHashSet<String>())) {
             return true;
         }
         if (kind != SwiftModel.Kind.ENUM) {
-            AnnotationMirror modelAnnotation = SwiftAnnotations.find(
-                    type,
-                    kind == SwiftModel.Kind.STRUCT
-                            ? SwiftAnnotations.THRIFT_STRUCT
-                            : SwiftAnnotations.THRIFT_UNION);
+            AnnotationMirror modelAnnotation = ThriftAnnotations.find(
+                    type, dialect.modelAnnotation(kind));
             if (modelAnnotation != null) {
-                TypeMirror builder = SwiftAnnotations.classValue(
+                TypeMirror builder = ThriftAnnotations.classValue(
                         elements, modelAnnotation, "builder");
                 if (builder != null && builder.getKind() == TypeKind.ERROR) {
                     return true;

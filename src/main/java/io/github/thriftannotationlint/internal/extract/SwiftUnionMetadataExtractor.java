@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
@@ -28,6 +29,7 @@ final class SwiftUnionMetadataExtractor {
     List<SwiftModel.ElementWithAnnotation> extract(
             TypeElement unionType,
             DeclaredType unionDeclaredType,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         List<SwiftModel.ElementWithAnnotation> candidates =
                 new ArrayList<SwiftModel.ElementWithAnnotation>();
@@ -38,7 +40,7 @@ final class SwiftUnionMetadataExtractor {
             for (VariableElement field
                     : ElementFilter.fieldsIn(hierarchyType.getEnclosedElements())) {
                 AnnotationMirror annotation =
-                        SwiftAnnotations.find(field, SwiftAnnotations.THRIFT_UNION_ID);
+                        ThriftAnnotations.find(field, dialect.thriftUnionId());
                 if (annotation == null) {
                     continue;
                 }
@@ -61,10 +63,10 @@ final class SwiftUnionMetadataExtractor {
         }
         for (ExecutableElement method : memberResolver.effectiveMethods(
                 unionType,
-                SwiftAnnotations.THRIFT_UNION_ID,
+                dialect.thriftUnionId(),
                 false)) {
             AnnotationMirror annotation =
-                    SwiftAnnotations.find(method, SwiftAnnotations.THRIFT_UNION_ID);
+                    ThriftAnnotations.find(method, dialect.thriftUnionId());
             candidates.add(new SwiftModel.ElementWithAnnotation(method, annotation));
             SwiftMemberResolver.ResolvedExecutable resolved =
                     memberResolver.resolveExecutable(unionDeclaredType, method);

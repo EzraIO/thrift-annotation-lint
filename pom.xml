@@ -8,7 +8,7 @@
     <artifactId>thrift-annotation-lint</artifactId>
     <version>0.1.0</version>
     <name>ThriftAnnotationLint</name>
-    <description>Compile-time validation for Java models using Facebook Swift Thrift annotations.</description>
+    <description>Compile-time validation for Java models using Facebook Swift or Airlift Drift Thrift annotations.</description>
     <url>https://github.com/EzraIO/thrift-annotation-lint</url>
 
     <licenses>
@@ -38,6 +38,8 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <swift.version>0.23.1</swift.version>
+        <!-- Drift 1.18 is the newest release whose published artifacts retain Java 8 bytecode. -->
+        <drift.version>1.18</drift.version>
         <junit.version>5.10.1</junit.version>
         <javax.inject.version>1</javax.inject.version>
         <slf4j.version>1.7.12</slf4j.version>
@@ -48,6 +50,18 @@
             <groupId>com.facebook.swift</groupId>
             <artifactId>swift-annotations</artifactId>
             <version>${swift.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift.drift</groupId>
+            <artifactId>drift-api</artifactId>
+            <version>${drift.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift.drift</groupId>
+            <artifactId>drift-codec</artifactId>
+            <version>${drift.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

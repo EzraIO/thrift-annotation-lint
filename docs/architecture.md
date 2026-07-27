@@ -105,13 +105,22 @@ member resolution, parameter-name resolution, and construction, field, union,
 and enum extractors. It receives the current round's compilation type names as
 an explicit argument and has no mutable cross-round extraction context.
 
+`ThriftAnnotationDialect` is the boundary between shared metadata validation and
+codec-specific annotation names. A model selects exactly one dialect (Facebook
+Swift or Airlift Drift); extraction never searches the other dialect after that
+selection, and mixed annotations fail before logical-field validation. This keeps
+the existing `SwiftModel` representation internal while preventing annotation
+families from being merged accidentally.
+
 Classpath parameter names are obtained through `ClasspathParameterNames`,
 which bounds resource reads and cache weight. `JvmDescriptorEncoder` produces
 declaration descriptors, and the pure `ClassFileParameterNameParser` reads only
 the class-file structures needed to reproduce Paranamer 2.8. Local variable
 slot widths, non-zero start positions, partial tables, annotation-name
-all-or-nothing behavior, and the deterministic `argN` fallback are compatibility
-requirements. `MethodParameters` alone is not treated as name evidence.
+all-or-nothing behavior, and the deterministic `argN` fallback are Swift compatibility
+requirements. `MethodParameters` alone is not treated as name evidence. Drift parameter
+resolution shares the bounded LVT reader but has its own annotation-name and failure
+fallback rules in `ThriftParameterNameResolver`.
 
 ## Validation and diagnostics
 
@@ -136,8 +145,8 @@ into post-compilation file-system artifacts.
 ## Dependency and compatibility boundaries
 
 Production code uses Java 8 syntax, targets class-file major version 52, and has
-no production dependency. Swift is referenced by qualified annotation names and
-is test-scoped. Service registration, Gradle aggregating metadata, Maven
+no production dependency. Swift and Drift are referenced by qualified annotation names
+and are test-scoped. Service registration, Gradle aggregating metadata, Maven
 coordinates, processor options, and the absence of a rule SPI or `ServiceLoader`
 extension mechanism are deliberate constraints.
 

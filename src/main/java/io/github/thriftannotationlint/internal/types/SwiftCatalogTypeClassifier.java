@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.types;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -148,11 +149,13 @@ final class SwiftCatalogTypeClassifier {
         if (view != null) {
             return new CatalogType(Kind.LIST, view, typeName);
         }
-        if (SwiftAnnotations.has(typeElement, SwiftAnnotations.THRIFT_STRUCT)) {
-            return new CatalogType(Kind.STRUCT, declaredType, typeName);
-        }
-        if (SwiftAnnotations.has(typeElement, SwiftAnnotations.THRIFT_UNION)) {
-            return new CatalogType(Kind.UNION, declaredType, typeName);
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (ThriftAnnotations.has(typeElement, dialect.thriftStruct())) {
+                return new CatalogType(Kind.STRUCT, declaredType, typeName);
+            }
+            if (ThriftAnnotations.has(typeElement, dialect.thriftUnion())) {
+                return new CatalogType(Kind.UNION, declaredType, typeName);
+            }
         }
         return new CatalogType(Kind.UNKNOWN, null, typeName);
     }
@@ -406,9 +409,16 @@ final class SwiftCatalogTypeClassifier {
             return false;
         }
         Element element = ((DeclaredType) type).asElement();
-        return element instanceof TypeElement
-                && (SwiftAnnotations.has(element, SwiftAnnotations.THRIFT_STRUCT)
-                || SwiftAnnotations.has(element, SwiftAnnotations.THRIFT_UNION));
+        if (!(element instanceof TypeElement)) {
+            return false;
+        }
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (ThriftAnnotations.has(element, dialect.thriftStruct())
+                    || ThriftAnnotations.has(element, dialect.thriftUnion())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private TypeMirror firstUpperBound(TypeMirror bound) {

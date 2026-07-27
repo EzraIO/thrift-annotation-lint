@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
@@ -25,12 +26,12 @@ import java.util.Set;
 final class SwiftFieldPartExtractor {
     private final Elements elements;
     private final SwiftMemberResolver memberResolver;
-    private final SwiftParameterNameResolver parameterNameResolver;
+    private final ThriftParameterNameResolver parameterNameResolver;
 
     SwiftFieldPartExtractor(
             Elements elements,
             SwiftMemberResolver memberResolver,
-            SwiftParameterNameResolver parameterNameResolver) {
+            ThriftParameterNameResolver parameterNameResolver) {
         this.elements = elements;
         this.memberResolver = memberResolver;
         this.parameterNameResolver = parameterNameResolver;
@@ -39,6 +40,7 @@ final class SwiftFieldPartExtractor {
     void addExecutableParameters(
             DeclaredType root,
             ExecutableElement executable,
+            ThriftAnnotationDialect dialect,
             List<FieldPart> parts,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
@@ -48,6 +50,7 @@ final class SwiftFieldPartExtractor {
                 FieldPart.Source.CONSTRUCTOR_PARAMETER,
                 executable,
                 resolved.parameterTypes(),
+                dialect,
                 parts,
                 roundCompilationTypes,
                 findings);
@@ -56,6 +59,7 @@ final class SwiftFieldPartExtractor {
     void extractAnnotatedFields(
             TypeElement root,
             DeclaredType rootType,
+            ThriftAnnotationDialect dialect,
             boolean allowReaders,
             boolean allowWriters,
             List<FieldPart> parts,
@@ -67,7 +71,7 @@ final class SwiftFieldPartExtractor {
             for (VariableElement field
                     : ElementFilter.fieldsIn(hierarchyType.getEnclosedElements())) {
                 AnnotationMirror annotation =
-                        SwiftAnnotations.find(field, SwiftAnnotations.THRIFT_FIELD);
+                        ThriftAnnotations.find(field, dialect.thriftField());
                 if (annotation == null) {
                     continue;
                 }
@@ -104,21 +108,22 @@ final class SwiftFieldPartExtractor {
             TypeElement root,
             DeclaredType rootType,
             SwiftModel.Kind modelKind,
+            ThriftAnnotationDialect dialect,
             boolean allowReaders,
             boolean allowWriters,
             List<FieldPart> parts,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
-        validateInvalidDeclaredMethods(root, findings);
+        validateInvalidDeclaredMethods(root, dialect, findings);
         List<ExecutableElement> methods = memberResolver.effectiveMethods(
                 root,
-                SwiftAnnotations.THRIFT_FIELD,
+                dialect.thriftField(),
                 true);
         for (ExecutableElement method : methods) {
             AnnotationMirror methodAnnotation =
-                    SwiftAnnotations.find(method, SwiftAnnotations.THRIFT_FIELD);
+                    ThriftAnnotations.find(method, dialect.thriftField());
             boolean annotatedParameters = memberResolver.hasAnnotatedParameter(
-                    method, SwiftAnnotations.THRIFT_FIELD);
+                    method, dialect.thriftField());
 
             if (!memberResolver.isPublicInstance(method)) {
                 findings.add(Finding.error(
@@ -185,15 +190,16 @@ final class SwiftFieldPartExtractor {
 
             boolean parameterMode = parameterTypes.size() > 1
                     || (!method.getParameters().isEmpty()
-                    && SwiftAnnotations.has(
+                    && ThriftAnnotations.has(
                     method.getParameters().get(0),
-                    SwiftAnnotations.THRIFT_FIELD));
+                    dialect.thriftField()));
             if (parameterMode) {
                 validateParameterInjectionMethod(method, methodAnnotation, findings);
                 addParameters(
                         FieldPart.Source.METHOD_PARAMETER,
                         method,
                         parameterTypes,
+                        dialect,
                         parts,
                         roundCompilationTypes,
                         findings);
@@ -215,6 +221,7 @@ final class SwiftFieldPartExtractor {
 
     private void validateInvalidDeclaredMethods(
             TypeElement root,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         for (TypeElement hierarchyType : memberResolver.hierarchy(root)) {
             if (hierarchyType.getKind().isInterface()) {
@@ -222,9 +229,9 @@ final class SwiftFieldPartExtractor {
             }
             for (ExecutableElement method
                     : ElementFilter.methodsIn(hierarchyType.getEnclosedElements())) {
-                if (!SwiftAnnotations.has(method, SwiftAnnotations.THRIFT_FIELD)
+                if (!ThriftAnnotations.has(method, dialect.thriftField())
                         && !memberResolver.hasAnnotatedParameter(
-                        method, SwiftAnnotations.THRIFT_FIELD)) {
+                        method, dialect.thriftField())) {
                     continue;
                 }
                 if (!memberResolver.isPublicInstance(method)) {
@@ -269,24 +276,27 @@ final class SwiftFieldPartExtractor {
             FieldPart.Source source,
             ExecutableElement executable,
             List<? extends TypeMirror> parameterTypes,
+            ThriftAnnotationDialect dialect,
             List<FieldPart> parts,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
-        List<String> annotationNames = parameterNameResolver.annotationNames(executable);
-        SwiftParameterNameResolver.Result parameterNames = annotationNames == null
-                ? parameterNameResolver.resolve(executable, roundCompilationTypes, findings)
+        List<String> annotationNames = parameterNameResolver.annotationNames(executable, dialect);
+        ThriftParameterNameResolver.Result parameterNames = annotationNames == null
+                ? parameterNameResolver.resolve(
+                        executable, dialect, roundCompilationTypes, findings)
                 : parameterNameResolver.annotationProvided(annotationNames);
         if (!parameterNames.valid()) {
             return;
         }
         for (int index = 0; index < executable.getParameters().size(); index++) {
             VariableElement parameter = executable.getParameters().get(index);
-            ThriftFieldData field = ThriftFieldData.from(elements, parameter);
+            ThriftFieldData field = ThriftFieldData.from(elements, parameter, dialect);
             boolean stableIdentity = validateStableParameterIdentity(
                     parameter,
                     field,
                     parameterNames,
                     annotationNames != null,
+                    dialect,
                     findings);
             String extractedName = annotationNames == null
                     ? parameterNames.names().get(index)
@@ -319,7 +329,7 @@ final class SwiftFieldPartExtractor {
             boolean stableIdentity,
             List<String> annotationNames,
             String extractedName,
-            SwiftParameterNameResolver.Result parameterNames) {
+            ThriftParameterNameResolver.Result parameterNames) {
         if (!stableIdentity) {
             return false;
         }
@@ -333,8 +343,9 @@ final class SwiftFieldPartExtractor {
     private boolean validateStableParameterIdentity(
             VariableElement parameter,
             ThriftFieldData field,
-            SwiftParameterNameResolver.Result parameterNames,
+            ThriftParameterNameResolver.Result parameterNames,
             boolean stableAnnotationNames,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         if (field.id() != null
                 || field.explicitName() != null
@@ -351,7 +362,8 @@ final class SwiftFieldPartExtractor {
                 null,
                 "Injection parameter '" + parameter.getSimpleName()
                         + "' must declare an explicit @ThriftField ID/name or a stable "
-                        + "annotation-provided name because Swift's runtime parameter-name "
+                        + "annotation-provided name because " + dialect.runtimeName()
+                        + "'s runtime parameter-name "
                         + "lookup is not guaranteed for this declaration."));
         return false;
     }

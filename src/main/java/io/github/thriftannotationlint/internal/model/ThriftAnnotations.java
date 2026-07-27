@@ -16,20 +16,56 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public final class SwiftAnnotations {
-    public static final String THRIFT_STRUCT = "com.facebook.swift.codec.ThriftStruct";
-    public static final String THRIFT_FIELD = "com.facebook.swift.codec.ThriftField";
-    public static final String THRIFT_CONSTRUCTOR = "com.facebook.swift.codec.ThriftConstructor";
-    public static final String THRIFT_UNION = "com.facebook.swift.codec.ThriftUnion";
-    public static final String THRIFT_UNION_ID = "com.facebook.swift.codec.ThriftUnionId";
-    public static final String THRIFT_ENUM = "com.facebook.swift.codec.ThriftEnum";
-    public static final String THRIFT_ENUM_VALUE = "com.facebook.swift.codec.ThriftEnumValue";
-    static final String THRIFT_IDL_ANNOTATION = "com.facebook.swift.codec.ThriftIdlAnnotation";
-
+public final class ThriftAnnotations {
     static final short UNSET_FIELD_ID = Short.MIN_VALUE;
     static final String RECURSIVE_IDL_KEY = "swift.recursive_reference";
 
-    private SwiftAnnotations() {
+    private ThriftAnnotations() {
+    }
+
+    public static ThriftAnnotationDialect dialectFor(
+            TypeElement type,
+            SwiftModel.Kind kind) {
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (has(type, dialect.modelAnnotation(kind))) {
+                return dialect;
+            }
+        }
+        return null;
+    }
+
+    public static int modelAnnotationCount(TypeElement type) {
+        int count = 0;
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            count += has(type, dialect.thriftStruct()) ? 1 : 0;
+            count += has(type, dialect.thriftUnion()) ? 1 : 0;
+            count += has(type, dialect.thriftEnum()) ? 1 : 0;
+        }
+        return count;
+    }
+
+    public static boolean isSupportedAnnotation(String annotationName) {
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (dialect.thriftStruct().equals(annotationName)
+                    || dialect.thriftField().equals(annotationName)
+                    || dialect.thriftConstructor().equals(annotationName)
+                    || dialect.thriftUnion().equals(annotationName)
+                    || dialect.thriftUnionId().equals(annotationName)
+                    || dialect.thriftEnum().equals(annotationName)
+                    || dialect.thriftEnumValue().equals(annotationName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isThriftFieldAnnotation(String annotationName) {
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (dialect.thriftField().equals(annotationName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static AnnotationMirror find(Element element, String annotationName) {

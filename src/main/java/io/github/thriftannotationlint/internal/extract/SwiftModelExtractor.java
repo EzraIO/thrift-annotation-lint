@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.bytecode.ClasspathParameterNames;
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
@@ -42,7 +43,7 @@ public final class SwiftModelExtractor {
         Types types = processingEnvironment.getTypeUtils();
 
         SwiftMemberResolver memberResolver = new SwiftMemberResolver(elements, types);
-        SwiftParameterNameResolver parameterNameResolver = new SwiftParameterNameResolver(
+        ThriftParameterNameResolver parameterNameResolver = new ThriftParameterNameResolver(
                 elements,
                 new ClasspathParameterNames(processingEnvironment));
         this.unresolvedSymbolInspector = new UnresolvedSymbolInspector(elements, types);
@@ -65,13 +66,16 @@ public final class SwiftModelExtractor {
             throw new IllegalArgumentException("Thrift model type must be declared");
         }
         TypeElement type = (TypeElement) declaredElement;
+        ThriftAnnotationDialect dialect = modelDialect(type, kind);
         boolean unresolvedSymbols = unresolvedSymbolInspector.hasUnresolvedSymbols(
-                type, declaredType, kind);
+                type, declaredType, kind, dialect);
         List<Finding> findings = new ArrayList<Finding>();
         validateModelDeclaration(type, kind, findings);
+        validateAnnotationDialect(type, dialect, findings);
 
         if (kind == SwiftModel.Kind.ENUM) {
-            List<ExecutableElement> enumMethods = enumMetadataExtractor.extract(type, findings);
+            List<ExecutableElement> enumMethods = enumMetadataExtractor.extract(
+                    type, dialect, findings);
             return new ExtractionResult(
                     new SwiftModel(
                             kind,
@@ -87,11 +91,8 @@ public final class SwiftModelExtractor {
                     unresolvedSymbols);
         }
 
-        AnnotationMirror modelAnnotation = SwiftAnnotations.find(
-                type,
-                kind == SwiftModel.Kind.STRUCT
-                        ? SwiftAnnotations.THRIFT_STRUCT
-                        : SwiftAnnotations.THRIFT_UNION);
+        AnnotationMirror modelAnnotation = ThriftAnnotations.find(
+                type, dialect.modelAnnotation(kind));
         validateIdlAnnotations(type, modelAnnotation, findings);
 
         TypeElement builder = constructionExtractor.extractBuilder(
@@ -108,16 +109,18 @@ public final class SwiftModelExtractor {
                     type,
                     declaredType,
                     kind,
+                    dialect,
                     parts,
                     constructionExecutables,
                     roundCompilationTypes,
                     findings);
             fieldPartExtractor.extractAnnotatedFields(
-                    type, declaredType, true, true, parts, findings);
+                    type, declaredType, dialect, true, true, parts, findings);
             fieldPartExtractor.extractAnnotatedMethods(
                     type,
                     declaredType,
                     kind,
+                    dialect,
                     true,
                     true,
                     parts,
@@ -130,6 +133,7 @@ public final class SwiftModelExtractor {
                     builder,
                     builderType,
                     kind,
+                    dialect,
                     parts,
                     constructionExecutables,
                     roundCompilationTypes,
@@ -138,17 +142,19 @@ public final class SwiftModelExtractor {
                     type,
                     builder,
                     builderType,
+                    dialect,
                     parts,
                     roundCompilationTypes,
                     findings);
-            constructionExtractor.reportIgnoredStructConstructors(type, findings);
+            constructionExtractor.reportIgnoredStructConstructors(type, dialect, findings);
 
             fieldPartExtractor.extractAnnotatedFields(
-                    type, declaredType, true, false, parts, findings);
+                    type, declaredType, dialect, true, false, parts, findings);
             fieldPartExtractor.extractAnnotatedMethods(
                     type,
                     declaredType,
                     kind,
+                    dialect,
                     true,
                     false,
                     parts,
@@ -156,11 +162,12 @@ public final class SwiftModelExtractor {
                     findings);
 
             fieldPartExtractor.extractAnnotatedFields(
-                    builder, builderType, false, true, parts, findings);
+                    builder, builderType, dialect, false, true, parts, findings);
             fieldPartExtractor.extractAnnotatedMethods(
                     builder,
                     builderType,
                     kind,
+                    dialect,
                     false,
                     true,
                     parts,
@@ -169,7 +176,7 @@ public final class SwiftModelExtractor {
         }
 
         List<SwiftModel.ElementWithAnnotation> unionIds = kind == SwiftModel.Kind.UNION
-                ? unionMetadataExtractor.extract(type, declaredType, findings)
+                ? unionMetadataExtractor.extract(type, declaredType, dialect, findings)
                 : Collections.<SwiftModel.ElementWithAnnotation>emptyList();
 
         Collections.sort(parts, new Comparator<FieldPart>() {
@@ -205,10 +212,7 @@ public final class SwiftModelExtractor {
                     "Thrift model type '" + type.getQualifiedName() + "' must be public."));
         }
 
-        int modelAnnotations = 0;
-        modelAnnotations += SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_STRUCT) ? 1 : 0;
-        modelAnnotations += SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_UNION) ? 1 : 0;
-        modelAnnotations += SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_ENUM) ? 1 : 0;
+        int modelAnnotations = ThriftAnnotations.modelAnnotationCount(type);
         if (modelAnnotations > 1) {
             findings.add(Finding.error(
                     DiagnosticCode.MODEL_DECLARATION,
@@ -219,7 +223,8 @@ public final class SwiftModelExtractor {
 
         if (kind == SwiftModel.Kind.ENUM) {
             if (type.getKind() != ElementKind.ENUM) {
-                String annotation = SwiftAnnotations.has(type, SwiftAnnotations.THRIFT_ENUM)
+                String annotation = ThriftAnnotations.has(
+                        type, modelDialect(type, kind).thriftEnum())
                         ? "@ThriftEnum"
                         : "@ThriftEnumValue";
                 findings.add(Finding.error(
@@ -237,6 +242,60 @@ public final class SwiftModelExtractor {
         }
     }
 
+    private void validateAnnotationDialect(
+            TypeElement type,
+            ThriftAnnotationDialect dialect,
+            List<Finding> findings) {
+        List<Element> elementsToCheck = new ArrayList<Element>();
+        elementsToCheck.add(type);
+        elementsToCheck.addAll(elements.getAllMembers(type));
+        for (Element element : elementsToCheck) {
+            for (AnnotationMirror annotation : element.getAnnotationMirrors()) {
+                Element annotationElement = annotation.getAnnotationType().asElement();
+                if (!(annotationElement instanceof TypeElement)) {
+                    continue;
+                }
+                String annotationName = ((TypeElement) annotationElement)
+                        .getQualifiedName().toString();
+                if (ThriftAnnotations.isSupportedAnnotation(annotationName)
+                        && !dialect.ownsAnnotation(annotationName)) {
+                    findings.add(Finding.error(
+                            DiagnosticCode.MODEL_DECLARATION,
+                            element,
+                            annotation,
+                            null,
+                            "Thrift model '" + type.getQualifiedName() + "' uses "
+                                    + dialect.displayName() + " annotations and must not mix in '"
+                                    + annotationName + "'."));
+                }
+            }
+        }
+    }
+
+    private ThriftAnnotationDialect modelDialect(
+            TypeElement type,
+            SwiftModel.Kind kind) {
+        ThriftAnnotationDialect dialect = ThriftAnnotations.dialectFor(type, kind);
+        if (dialect != null) {
+            return dialect;
+        }
+        if (kind == SwiftModel.Kind.ENUM) {
+            for (ThriftAnnotationDialect candidate : ThriftAnnotationDialect.values()) {
+                for (Element member : elements.getAllMembers(type)) {
+                    if (ThriftAnnotations.has(member, candidate.thriftEnumValue())) {
+                        return candidate;
+                    }
+                }
+            }
+        }
+        for (ThriftAnnotationDialect candidate : ThriftAnnotationDialect.values()) {
+            if (elements.getTypeElement(candidate.modelAnnotation(kind)) != null) {
+                return candidate;
+            }
+        }
+        return ThriftAnnotationDialect.FACEBOOK_SWIFT;
+    }
+
     private void validateIdlAnnotations(
             TypeElement type,
             AnnotationMirror annotation,
@@ -244,8 +303,8 @@ public final class SwiftModelExtractor {
         if (annotation == null) {
             return;
         }
-        SwiftAnnotations.IdlAnnotations idl =
-                SwiftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
+        ThriftAnnotations.IdlAnnotations idl =
+                ThriftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
         if (!idl.duplicateKeys().isEmpty()) {
             findings.add(Finding.error(
                     DiagnosticCode.CONFLICTING_IDL_ANNOTATIONS,

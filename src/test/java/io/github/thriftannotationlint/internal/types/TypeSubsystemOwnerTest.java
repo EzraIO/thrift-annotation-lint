@@ -3,6 +3,7 @@ package io.github.thriftannotationlint.internal.types;
 import io.github.thriftannotationlint.CompilerTestSupport;
 
 import io.github.thriftannotationlint.internal.model.SwiftModel;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import org.junit.jupiter.api.Test;
 
@@ -111,7 +112,8 @@ final class TypeSubsystemOwnerTest {
                             processingEnv.getTypeUtils()).hasUnresolvedSymbols(
                             fixture,
                             (DeclaredType) fixture.asType(),
-                            SwiftModel.Kind.STRUCT);
+                            SwiftModel.Kind.STRUCT,
+                            ThriftAnnotationDialect.FACEBOOK_SWIFT);
                 }
             }
             if (!generated && !roundEnvironment.processingOver()) {

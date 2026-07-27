@@ -32,10 +32,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Compile-time validator for Java models using Facebook Swift codec annotations.
+ * Compile-time validator for Java models using supported Thrift codec annotations.
  *
  * <p>The processor intentionally references annotations by qualified name so the processor core
- * has no runtime dependency on Swift.</p>
+ * has no runtime dependency on Swift or Drift.</p>
  */
 public final class ValidationSession {
     private ProcessingEnvironment processingEnv;

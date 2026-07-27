@@ -1,6 +1,7 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
@@ -47,8 +48,8 @@ final class SwiftConstructionExtractor {
         if (modelAnnotation == null) {
             return null;
         }
-        TypeMirror builderType = SwiftAnnotations.classValue(elements, modelAnnotation, "builder");
-        if (SwiftAnnotations.isVoidClassValue(builderType)) {
+        TypeMirror builderType = ThriftAnnotations.classValue(elements, modelAnnotation, "builder");
+        if (ThriftAnnotations.isVoidClassValue(builderType)) {
             return null;
         }
         Element builderElement = types.asElement(builderType);
@@ -67,7 +68,7 @@ final class SwiftConstructionExtractor {
                     DiagnosticCode.INVALID_BUILDER,
                     modelType,
                     modelAnnotation,
-                    SwiftAnnotations.explicitValue(modelAnnotation, "builder"),
+                    ThriftAnnotations.explicitValue(modelAnnotation, "builder"),
                     "Builder for Thrift model '" + modelType.getQualifiedName()
                             + "' is java.lang.Void; omit builder or use void.class for Swift's "
                             + "no-builder sentinel."));
@@ -134,6 +135,7 @@ final class SwiftConstructionExtractor {
             TypeElement constructionType,
             DeclaredType constructionView,
             SwiftModel.Kind modelKind,
+            ThriftAnnotationDialect dialect,
             List<FieldPart> parts,
             List<ExecutableElement> constructionExecutables,
             Set<String> roundCompilationTypes,
@@ -167,7 +169,7 @@ final class SwiftConstructionExtractor {
                 ElementFilter.constructorsIn(constructionType.getEnclosedElements());
         List<ExecutableElement> annotated = new ArrayList<ExecutableElement>();
         for (ExecutableElement constructor : constructors) {
-            if (!SwiftAnnotations.has(constructor, SwiftAnnotations.THRIFT_CONSTRUCTOR)) {
+            if (!ThriftAnnotations.has(constructor, dialect.thriftConstructor())) {
                 continue;
             }
             if (!constructor.getModifiers().contains(Modifier.PUBLIC)) {
@@ -223,6 +225,7 @@ final class SwiftConstructionExtractor {
             fieldPartExtractor.addExecutableParameters(
                     constructionView,
                     constructor,
+                    dialect,
                     parts,
                     roundCompilationTypes,
                     findings);
@@ -233,13 +236,14 @@ final class SwiftConstructionExtractor {
             TypeElement modelType,
             TypeElement builder,
             DeclaredType builderType,
+            ThriftAnnotationDialect dialect,
             List<FieldPart> parts,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
-        validateInvalidBuilderFactoryMethods(builder, findings);
+        validateInvalidBuilderFactoryMethods(builder, dialect, findings);
         List<ExecutableElement> relevant = memberResolver.effectiveMethods(
                 builder,
-                SwiftAnnotations.THRIFT_CONSTRUCTOR,
+                dialect.thriftConstructor(),
                 false);
         List<ExecutableElement> valid = new ArrayList<ExecutableElement>();
         for (ExecutableElement method : relevant) {
@@ -278,6 +282,7 @@ final class SwiftConstructionExtractor {
             fieldPartExtractor.addExecutableParameters(
                     builderType,
                     method,
+                    dialect,
                     parts,
                     roundCompilationTypes,
                     findings);
@@ -286,10 +291,11 @@ final class SwiftConstructionExtractor {
 
     void reportIgnoredStructConstructors(
             TypeElement modelType,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         for (ExecutableElement constructor
                 : ElementFilter.constructorsIn(modelType.getEnclosedElements())) {
-            if (SwiftAnnotations.has(constructor, SwiftAnnotations.THRIFT_CONSTRUCTOR)) {
+            if (ThriftAnnotations.has(constructor, dialect.thriftConstructor())) {
                 if (!constructor.getModifiers().contains(Modifier.PUBLIC)) {
                     continue;
                 }
@@ -304,6 +310,7 @@ final class SwiftConstructionExtractor {
 
     private void validateInvalidBuilderFactoryMethods(
             TypeElement builder,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         for (TypeElement hierarchyType : memberResolver.hierarchy(builder)) {
             if (hierarchyType.getKind().isInterface()) {
@@ -311,7 +318,7 @@ final class SwiftConstructionExtractor {
             }
             for (ExecutableElement method
                     : ElementFilter.methodsIn(hierarchyType.getEnclosedElements())) {
-                if (SwiftAnnotations.has(method, SwiftAnnotations.THRIFT_CONSTRUCTOR)
+                if (ThriftAnnotations.has(method, dialect.thriftConstructor())
                         && !memberResolver.isPublicInstance(method)) {
                     findings.add(Finding.error(
                             DiagnosticCode.INVALID_MEMBER_MODIFIERS,

@@ -1,6 +1,6 @@
 package io.github.thriftannotationlint.internal.extract;
 
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -76,7 +76,7 @@ final class SwiftMemberResolver {
 
     boolean hasAnnotatedParameter(ExecutableElement method, String annotationName) {
         for (VariableElement parameter : method.getParameters()) {
-            if (SwiftAnnotations.has(parameter, annotationName)) {
+            if (ThriftAnnotations.has(parameter, annotationName)) {
                 return true;
             }
         }
@@ -142,7 +142,7 @@ final class SwiftMemberResolver {
             for (ExecutableElement declaration
                     : ElementFilter.methodsIn(hierarchyType.getEnclosedElements())) {
                 if (signature.equals(declaredMethodSignature(declaration))
-                        && SwiftAnnotations.has(declaration, annotationName)) {
+                        && ThriftAnnotations.has(declaration, annotationName)) {
                     return declaration;
                 }
             }

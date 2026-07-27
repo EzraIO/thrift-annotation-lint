@@ -2,7 +2,8 @@ package io.github.thriftannotationlint.internal.planning;
 
 import io.github.thriftannotationlint.internal.diagnostic.DiagnosticCode;
 import io.github.thriftannotationlint.internal.diagnostic.Finding;
-import io.github.thriftannotationlint.internal.model.SwiftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
+import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import io.github.thriftannotationlint.internal.extract.SwiftModelClassifier;
 import io.github.thriftannotationlint.internal.model.SwiftModel;
 import io.github.thriftannotationlint.internal.model.ElementNames;
@@ -103,11 +104,11 @@ public final class RoundPlanner {
     public boolean isRelevant(
             Set<? extends TypeElement> annotations,
             RoundEnvironment roundEnvironment) {
-        if (!swiftAnnotationsAvailable()) {
+        if (!thriftAnnotationsAvailable()) {
             return false;
         }
         return containsEnumRoot(roundEnvironment)
-                || containsSwiftAnnotation(annotations)
+                || containsThriftAnnotation(annotations)
                 || state.hasSourceRoots()
                 || state.hasPendingModels();
     }
@@ -127,24 +128,26 @@ public final class RoundPlanner {
                 new LinkedHashMap<String, ModelDemand>();
         Map<String, ContainerDemand> containerRoots =
                 new LinkedHashMap<String, ContainerDemand>();
-        addAnnotatedTypes(
-                roundEnvironment,
-                SwiftAnnotations.THRIFT_STRUCT,
-                SwiftModel.Kind.STRUCT,
-                candidates,
-                containerRoots);
-        addAnnotatedTypes(
-                roundEnvironment,
-                SwiftAnnotations.THRIFT_UNION,
-                SwiftModel.Kind.UNION,
-                candidates,
-                containerRoots);
-        addAnnotatedTypes(
-                roundEnvironment,
-                SwiftAnnotations.THRIFT_ENUM,
-                SwiftModel.Kind.ENUM,
-                candidates,
-                containerRoots);
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            addAnnotatedTypes(
+                    roundEnvironment,
+                    dialect.thriftStruct(),
+                    SwiftModel.Kind.STRUCT,
+                    candidates,
+                    containerRoots);
+            addAnnotatedTypes(
+                    roundEnvironment,
+                    dialect.thriftUnion(),
+                    SwiftModel.Kind.UNION,
+                    candidates,
+                    containerRoots);
+            addAnnotatedTypes(
+                    roundEnvironment,
+                    dialect.thriftEnum(),
+                    SwiftModel.Kind.ENUM,
+                    candidates,
+                    containerRoots);
+        }
         addEnumValueOwners(roundEnvironment, candidates, declarationFindings);
         Set<String> currentContainerNames =
                 new LinkedHashSet<String>(containerRoots.keySet());
@@ -234,24 +237,23 @@ public final class RoundPlanner {
         return first;
     }
 
-    private boolean swiftAnnotationsAvailable() {
-        return element(SwiftAnnotations.THRIFT_STRUCT) != null
-                || element(SwiftAnnotations.THRIFT_UNION) != null
-                || element(SwiftAnnotations.THRIFT_ENUM) != null
-                || element(SwiftAnnotations.THRIFT_FIELD) != null
-                || element(SwiftAnnotations.THRIFT_ENUM_VALUE) != null;
+    private boolean thriftAnnotationsAvailable() {
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            if (element(dialect.thriftStruct()) != null
+                    || element(dialect.thriftUnion()) != null
+                    || element(dialect.thriftEnum()) != null
+                    || element(dialect.thriftField()) != null
+                    || element(dialect.thriftEnumValue()) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private boolean containsSwiftAnnotation(Set<? extends TypeElement> annotations) {
+    private boolean containsThriftAnnotation(Set<? extends TypeElement> annotations) {
         for (TypeElement annotation : annotations) {
             String name = annotation.getQualifiedName().toString();
-            if (SwiftAnnotations.THRIFT_STRUCT.equals(name)
-                    || SwiftAnnotations.THRIFT_FIELD.equals(name)
-                    || SwiftAnnotations.THRIFT_CONSTRUCTOR.equals(name)
-                    || SwiftAnnotations.THRIFT_UNION.equals(name)
-                    || SwiftAnnotations.THRIFT_UNION_ID.equals(name)
-                    || SwiftAnnotations.THRIFT_ENUM.equals(name)
-                    || SwiftAnnotations.THRIFT_ENUM_VALUE.equals(name)) {
+            if (ThriftAnnotations.isSupportedAnnotation(name)) {
                 return true;
             }
         }
@@ -409,22 +411,24 @@ public final class RoundPlanner {
             RoundEnvironment roundEnvironment,
             Map<String, ModelDemand> candidates,
             List<Finding> findings) {
-        TypeElement annotation = element(SwiftAnnotations.THRIFT_ENUM_VALUE);
-        if (annotation == null) {
-            return;
-        }
-        for (Element annotated : roundEnvironment.getElementsAnnotatedWith(annotation)) {
-            Element owner = annotated.getEnclosingElement();
-            if (owner instanceof TypeElement && owner.getKind() == ElementKind.ENUM) {
-                addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, candidates);
+        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            TypeElement annotation = element(dialect.thriftEnumValue());
+            if (annotation == null) {
+                continue;
             }
-            else if (owner instanceof TypeElement && !owner.getKind().isInterface()) {
-                findings.add(Finding.error(
-                        DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
-                        annotated,
-                        "@ThriftEnumValue method '" + annotated.getSimpleName()
-                                + "' must be declared by a Java enum or an interface inherited "
-                                + "by an enum."));
+            for (Element annotated : roundEnvironment.getElementsAnnotatedWith(annotation)) {
+                Element owner = annotated.getEnclosingElement();
+                if (owner instanceof TypeElement && owner.getKind() == ElementKind.ENUM) {
+                    addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, candidates);
+                }
+                else if (owner instanceof TypeElement && !owner.getKind().isInterface()) {
+                    findings.add(Finding.error(
+                            DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
+                            annotated,
+                            "@ThriftEnumValue method '" + annotated.getSimpleName()
+                                    + "' must be declared by a Java enum or an interface inherited "
+                                    + "by an enum."));
+                }
             }
         }
         for (Element root : roundEnvironment.getRootElements()) {
@@ -439,9 +443,11 @@ public final class RoundPlanner {
             TypeElement enumType = (TypeElement) element;
             for (ExecutableElement method : ElementFilter.methodsIn(
                     processingEnvironment.getElementUtils().getAllMembers(enumType))) {
-                if (SwiftAnnotations.has(method, SwiftAnnotations.THRIFT_ENUM_VALUE)) {
-                    addCandidate(enumType, SwiftModel.Kind.ENUM, candidates);
-                    break;
+                for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+                    if (ThriftAnnotations.has(method, dialect.thriftEnumValue())) {
+                        addCandidate(enumType, SwiftModel.Kind.ENUM, candidates);
+                        return;
+                    }
                 }
             }
         }
