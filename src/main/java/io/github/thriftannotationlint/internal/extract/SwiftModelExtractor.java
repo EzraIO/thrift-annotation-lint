@@ -282,7 +282,10 @@ public final class SwiftModelExtractor {
         if (kind == SwiftModel.Kind.ENUM) {
             for (ThriftAnnotationDialect candidate : ThriftAnnotationDialect.values()) {
                 for (Element member : elements.getAllMembers(type)) {
-                    if (ThriftAnnotations.has(member, candidate.thriftEnumValue())) {
+                    if (ThriftAnnotations.has(member, candidate.thriftEnumValue())
+                            || (candidate.thriftEnumUnknownValue() != null
+                            && ThriftAnnotations.has(
+                                    member, candidate.thriftEnumUnknownValue()))) {
                         return candidate;
                     }
                 }

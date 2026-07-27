@@ -225,6 +225,23 @@ public final class RoundPlanner {
         return current;
     }
 
+    private void addEnumUnknownValueOwners(
+            RoundEnvironment roundEnvironment,
+            ThriftAnnotationDialect dialect,
+            Map<String, ModelDemand> candidates) {
+        String annotationName = dialect.thriftEnumUnknownValue();
+        TypeElement annotation = annotationName == null ? null : element(annotationName);
+        if (annotation == null) {
+            return;
+        }
+        for (Element annotated : roundEnvironment.getElementsAnnotatedWith(annotation)) {
+            Element owner = annotated.getEnclosingElement();
+            if (owner instanceof TypeElement && owner.getKind() == ElementKind.ENUM) {
+                addCandidate((TypeElement) owner, SwiftModel.Kind.ENUM, candidates);
+            }
+        }
+    }
+
     public Element firstRootElement(RoundEnvironment roundEnvironment) {
         Element first = null;
         for (Element element : roundEnvironment.getRootElements()) {
@@ -412,6 +429,7 @@ public final class RoundPlanner {
             Map<String, ModelDemand> candidates,
             List<Finding> findings) {
         for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
+            addEnumUnknownValueOwners(roundEnvironment, dialect, candidates);
             TypeElement annotation = element(dialect.thriftEnumValue());
             if (annotation == null) {
                 continue;

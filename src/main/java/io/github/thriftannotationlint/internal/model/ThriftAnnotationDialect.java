@@ -51,6 +51,10 @@ public enum ThriftAnnotationDialect {
         return annotation("ThriftEnumValue");
     }
 
+    public String thriftEnumUnknownValue() {
+        return this == AIRLIFT_DRIFT ? annotation("ThriftEnumUnknownValue") : null;
+    }
+
     public String thriftIdlAnnotation() {
         return annotation("ThriftIdlAnnotation");
     }
@@ -73,6 +77,7 @@ public enum ThriftAnnotationDialect {
                 || thriftUnionId().equals(annotationName)
                 || thriftEnum().equals(annotationName)
                 || thriftEnumValue().equals(annotationName)
+                || annotationName.equals(thriftEnumUnknownValue())
                 || thriftIdlAnnotation().equals(annotationName);
     }
 

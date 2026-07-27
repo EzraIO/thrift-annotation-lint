@@ -10,6 +10,7 @@ import io.github.thriftannotationlint.internal.model.ElementNames;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeKind;
@@ -82,7 +83,35 @@ final class SwiftEnumMetadataExtractor {
                                 + "non-generic, take no arguments, and return int or Integer."));
             }
         }
+        validateUnknownValue(enumType, dialect, findings);
         return methods;
+    }
+
+    private void validateUnknownValue(
+            TypeElement enumType,
+            ThriftAnnotationDialect dialect,
+            List<Finding> findings) {
+        String annotationName = dialect.thriftEnumUnknownValue();
+        if (annotationName == null) {
+            return;
+        }
+        List<VariableElement> unknownValues = new ArrayList<VariableElement>();
+        for (VariableElement constant : ElementFilter.fieldsIn(enumType.getEnclosedElements())) {
+            if (constant.getKind() == javax.lang.model.element.ElementKind.ENUM_CONSTANT
+                    && ThriftAnnotations.has(constant, annotationName)) {
+                unknownValues.add(constant);
+            }
+        }
+        if (unknownValues.size() > 1) {
+            VariableElement target = unknownValues.get(1);
+            findings.add(Finding.error(
+                    DiagnosticCode.INVALID_ENUM_UNKNOWN_VALUE,
+                    target,
+                    ThriftAnnotations.find(target, annotationName),
+                    null,
+                    "Drift enum '" + enumType.getQualifiedName()
+                            + "' must declare at most one @ThriftEnumUnknownValue constant."));
+        }
     }
 
     private boolean hasInvalidEnumValueBridge(

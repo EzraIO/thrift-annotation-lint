@@ -144,7 +144,8 @@ after reviewing the findings. The runnable example catalog is available under
 - unsupported or incompatible Java and nested container types;
 - recursive model cycles that are not explicitly declared recursive;
 - unsafe union discriminators, construction paths, and payload IDs;
-- invalid enum value methods and non-converging exact generic model graphs.
+- invalid enum value methods, multiple Drift unknown-enum fallbacks, and
+  non-converging exact generic model graphs.
 
 ## Supported scope
 
@@ -157,6 +158,7 @@ ThriftAnnotationLint scans these model annotations:
 - `@ThriftConstructor`
 - `@ThriftUnionId`
 - `@ThriftEnumValue`
+- Drift `@ThriftEnumUnknownValue`
 
 The processor builds logical fields from Java fields, getters, setters,
 constructor parameters, and builder methods before validating IDs, names,
@@ -176,9 +178,14 @@ The preview does **not** validate:
 - Thrift IDL files or the correctness of an IDL compiler's generated output
 - RPC service annotations
 - schema compatibility between releases
-- Airlift Drift models
 - values that require executing user code
 - service-only types such as `ListenableFuture<T>` on model fields
+
+The release-to-release boundary is deliberate. Questions from real Thrift users often
+involve retiring and reusing field IDs, changing field types, or weakening a published
+`required` field. Those checks require an old schema/model baseline, not just the current
+JSR 269 compilation. This processor catches unsafe metadata inside the current build; a
+future compatibility mode may compare a committed baseline separately.
 
 See [Rule reference](docs/rules.md) for the diagnostic categories and known
 runtime-only boundaries.

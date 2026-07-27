@@ -52,7 +52,8 @@ public final class ThriftAnnotations {
                     || dialect.thriftUnion().equals(annotationName)
                     || dialect.thriftUnionId().equals(annotationName)
                     || dialect.thriftEnum().equals(annotationName)
-                    || dialect.thriftEnumValue().equals(annotationName)) {
+                    || dialect.thriftEnumValue().equals(annotationName)
+                    || annotationName.equals(dialect.thriftEnumUnknownValue())) {
                 return true;
             }
         }

@@ -140,4 +140,34 @@ final class DriftCompatibilityTest {
         withDebug.assertNoThriftAnnotationLintDiagnostics();
         withoutDebug.assertFailedWith("AW3003");
     }
+
+    @Test
+    void acceptsOneDriftUnknownEnumFallback() {
+        CompilerTestSupport.CompilationResult result = compile(source("example.ForwardCompatibleState",
+                "package example;",
+                "import io.airlift.drift.annotations.*;",
+                "@ThriftEnum public enum ForwardCompatibleState {",
+                "  READY(1),",
+                "  @ThriftEnumUnknownValue UNKNOWN(-1);",
+                "  private final int value;",
+                "  ForwardCompatibleState(int value) { this.value = value; }",
+                "  @ThriftEnumValue public int getValue() { return value; }",
+                "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+    }
+
+    @Test
+    void rejectsMultipleDriftUnknownEnumFallbacks() {
+        CompilerTestSupport.CompilationResult result = compile(source("example.AmbiguousUnknownState",
+                "package example;",
+                "import io.airlift.drift.annotations.*;",
+                "public enum AmbiguousUnknownState {",
+                "  @ThriftEnumUnknownValue FIRST,",
+                "  @ThriftEnumUnknownValue SECOND;",
+                "}"));
+
+        result.assertFailedWith("AW6002");
+    }
 }

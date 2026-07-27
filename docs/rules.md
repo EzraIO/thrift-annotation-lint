@@ -39,6 +39,7 @@ meaning of a code.
 | `AW5003` | A union field has invalid requiredness. |
 | `AW5004` | A union payload uses unsafe field ID `0`, which is the default codec's no-field discriminator. |
 | `AW6001` | A Thrift enum value method has an invalid signature. |
+| `AW6002` | A Drift enum declares multiple `@ThriftEnumUnknownValue` fallback constants. |
 | `AW9001` | A processor option is invalid. |
 | `AW9002` | An unexpected processor failure prevented reliable validation. |
 | `AW9003` | Reachable exact-model validation exceeded its configured safety budget. |
@@ -52,6 +53,10 @@ executing application code. ThriftAnnotationLint therefore does not attempt to v
 - reflection behavior changed by agents or runtime bytecode transformation;
 - dynamic codec or catalog configuration;
 - compatibility with a model from a previous release.
+
+In particular, the processor cannot know whether a current field ID belonged to a removed
+field, whether a `required` field was optional in a deployed version, or whether one ID's
+wire type changed. These are schema-history questions and require an explicit baseline.
 
 The verified codec contract uses Swift's default `CompilerThriftCodecFactory`.
 In particular, `ReflectionThriftCodecFactory` invokes union builder factories
