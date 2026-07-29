@@ -59,9 +59,10 @@ and invalid exact generic models reached through source or classpath references.
 
 ## Quick start
 
-The coordinates below become available after `0.2.0` is published to Maven
-Central. For an established codebase, begin with `warning` mode and switch to
-`strict` after reviewing the findings.
+Version `0.2.0` is published on
+[Maven Central](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint/0.2.0).
+For an established codebase, begin with `warning` mode and switch to `strict`
+after reviewing the findings.
 
 ### Maven
 
