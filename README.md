@@ -57,6 +57,29 @@ It also catches missing read/write paths, invalid constructors and builders,
 unsafe union definitions, incompatible Java types, undeclared recursive edges,
 and invalid exact generic models reached through source or classpath references.
 
+## Why check during compilation?
+
+Java's type system can verify that an annotation is syntactically valid, but it
+does not understand the schema formed by several `@ThriftField` declarations.
+Swift and Drift normally assemble that schema later, while building runtime
+metadata or a codec. By then the code has already compiled, and the failure may
+appear only in a test environment or after an application starts.
+
+ThriftAnnotationLint runs as a standard JSR 269 annotation processor so it can:
+
+- report the error on the exact field, method, or constructor parameter that
+  introduced it;
+- fail the same `javac`, Maven, Gradle, or CI build that introduced the invalid
+  model;
+- validate source models together with the exact generic models they reach on
+  the classpath, without loading application classes or executing user code;
+- keep the checker out of the application runtime—the published JAR is needed
+  only on the annotation-processor path.
+
+Static analysis cannot prove behavior that requires running application code,
+so codec round-trip tests still complement these checks. See
+[Compile-time and runtime boundary](#compile-time-and-runtime-boundary).
+
 ## Quick start
 
 Version `0.2.0` is published on
@@ -135,14 +158,18 @@ The runnable example catalog is available under
 
 ## What it catches
 
-- conflicting field IDs, names, requiredness, and IDL annotations;
-- missing extraction or injection paths and reflection-order ambiguity;
-- invalid constructors, builders, setter signatures, and member modifiers;
-- unsupported or incompatible Java and nested container types;
-- recursive model cycles that are not explicitly declared recursive;
-- unsafe union discriminators, construction paths, and payload IDs;
-- invalid enum value methods, multiple Drift unknown-enum fallbacks, and
-  non-converging exact generic model graphs.
+| Area | Examples | Diagnostic families |
+| --- | --- | --- |
+| Model declarations | Invalid visibility, annotation combinations, or mixed Swift/Drift dialects | `AW1001` |
+| Field metadata | Missing, duplicate, or conflicting IDs; conflicting names, requiredness, or IDL annotations | `AW2001`–`AW2007` |
+| Access and construction | Missing read/write paths, ambiguous getters, invalid constructors, setters, builders, or modifiers | `AW3001`–`AW3005` |
+| Java types | Unsupported field types, incompatible member types, unsafe nested containers, or undeclared recursive edges | `AW4001`–`AW4003` |
+| Unions | Missing or invalid discriminators, non-deterministic construction, invalid requiredness, or payload ID `0` | `AW5001`–`AW5004` |
+| Enums | Invalid enum value methods or multiple Drift unknown-value fallbacks | `AW6001`–`AW6002` |
+| Processor safety | Invalid options, internal failures, or an unbounded exact generic model graph | `AW9001`–`AW9003` |
+
+See the [complete rule reference](docs/rules.md) for each stable diagnostic code,
+deliberately stricter safety rule, and runtime-only limitation.
 
 ## Supported scope
 
