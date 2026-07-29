@@ -2,25 +2,33 @@
 
 [![CI](https://github.com/EzraIO/thrift-annotation-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/EzraIO/thrift-annotation-lint/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/EzraIO/thrift-annotation-lint?include_prereleases&sort=semver)](https://github.com/EzraIO/thrift-annotation-lint/releases)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.ezraio/thrift-annotation-lint.svg)](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint)
 [![Java 8+](https://img.shields.io/badge/Java-8%2B-007396)](#compatibility)
 [![License](https://img.shields.io/github/license/EzraIO/thrift-annotation-lint)](LICENSE)
 
-> Catch invalid Facebook Swift or Airlift Drift `@Thrift*` models during compilation—not during
-> application startup or codec initialization.
+> Catch broken Facebook Swift and Airlift Drift `@Thrift*` models during
+> compilation—not during application startup or codec initialization.
 
-ThriftAnnotationLint validates annotation-based Java models for Facebook Swift and
-Airlift Drift during
-`javac`. Diagnostics point to the offending model element, carry stable `AWxxxx`
-rule codes, and fail the build before an invalid model reaches packaging or
-deployment.
+ThriftAnnotationLint is a zero-runtime-dependency Java annotation processor. It
+finds duplicate field IDs, invalid constructors and unions, incompatible Java
+types, and undeclared recursive models while `javac` can still point directly
+to the offending source element.
 
-> **Project status:** `0.1.0` is the first preview release. The processor is verified
+- **Find failures earlier:** turn metadata and codec initialization failures
+  into compiler diagnostics.
+- **Adopt safely:** audit an existing model base in `warning` mode before
+  enabling build-breaking `strict` mode.
+- **Keep builds lean:** the processor uses standard JSR 269 APIs and adds no
+  application runtime dependencies.
+- **Use either dialect:** verified against Facebook Swift and Airlift Drift.
+
+> **Project status:** `0.2.0` is a preview release. The processor is verified
 > against the public Facebook Swift `0.19.2`, `0.20.0`, `0.21.1`, `0.22.1`, and
 > `0.23.1` contracts and the Airlift Drift `1.18` annotation contract, plus deliberate
 > compile-time safety extensions described below. Its rule and diagnostic
 > contracts may evolve before `1.0.0`.
 
-## Catch a real metadata failure before runtime
+## See the failure at the source
 
 This model compiles as ordinary Java, but two logical fields reuse the same
 Thrift field ID:
@@ -36,8 +44,9 @@ public class DuplicateIds {
 }
 ```
 
-Without an earlier check, the failure can surface only when Swift builds runtime
-metadata or a codec. ThriftAnnotationLint reports it at the second annotation:
+Ordinary Java compilation accepts this class. Without an earlier check, the
+failure can surface only when Swift or Drift builds runtime metadata or a
+codec. ThriftAnnotationLint reports it at the second annotation:
 
 ```text
 error: [AW2002] Thrift model 'example.DuplicateIds' uses field ID 7
@@ -50,20 +59,9 @@ and invalid exact generic models reached through source or classpath references.
 
 ## Quick start
 
-ThriftAnnotationLint is not on Maven Central yet. Install the `v0.1.0` release
-JAR into your local Maven repository once, then use the normal Maven or Gradle
-annotation-processor configuration below.
-
-```bash
-curl -fLO https://github.com/EzraIO/thrift-annotation-lint/releases/download/v0.1.0/thrift-annotation-lint-0.1.0.jar
-mvn org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
-  -Dfile=thrift-annotation-lint-0.1.0.jar \
-  -DgroupId=io.github.thriftannotationlint \
-  -DartifactId=thrift-annotation-lint \
-  -Dversion=0.1.0 \
-  -Dpackaging=jar \
-  -DgeneratePom=true
-```
+The coordinates below become available after `0.2.0` is published to Maven
+Central. For an established codebase, begin with `warning` mode and switch to
+`strict` after reviewing the findings.
 
 ### Maven
 
@@ -93,9 +91,9 @@ mvn org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
             <configuration>
                 <annotationProcessorPaths>
                     <path>
-                        <groupId>io.github.thriftannotationlint</groupId>
+                        <groupId>io.github.ezraio</groupId>
                         <artifactId>thrift-annotation-lint</artifactId>
-                        <version>0.1.0</version>
+                        <version>0.2.0</version>
                     </path>
                 </annotationProcessorPaths>
                 <compilerArgs>
@@ -111,7 +109,6 @@ mvn org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
 
 ```groovy
 repositories {
-    mavenLocal()
     mavenCentral()
 }
 
@@ -120,7 +117,7 @@ dependencies {
     compileOnly "com.facebook.swift:swift-annotations:0.23.1"
     // Or this for Airlift Drift models:
     // compileOnly "io.airlift.drift:drift-api:1.18"
-    annotationProcessor "io.github.thriftannotationlint:thrift-annotation-lint:0.1.0"
+    annotationProcessor "io.github.ezraio:thrift-annotation-lint:0.2.0"
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -132,8 +129,7 @@ The JAR registers itself through the standard annotation-processor service file
 and declares Gradle aggregating behavior, so no explicit `-processor` class name
 is required.
 
-For an existing model base, start with `warning` mode and switch to `strict`
-after reviewing the findings. The runnable example catalog is available under
+The runnable example catalog is available under
 [`examples/maven`](examples/maven/README.md).
 
 ## What it catches

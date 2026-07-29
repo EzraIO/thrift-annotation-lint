@@ -15,7 +15,7 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <swift.version>0.23.1</swift.version>
-        <thrift.annotation.lint.version>0.1.0</thrift.annotation.lint.version>
+        <thrift.annotation.lint.version>0.2.0</thrift.annotation.lint.version>
         <thrift.annotation.lint.mode>strict</thrift.annotation.lint.mode>
         <thrift.annotation.lint.maxExactModels>512</thrift.annotation.lint.maxExactModels>
         <demo.case>valid-models</demo.case>
@@ -40,7 +40,7 @@
                     <showWarnings>true</showWarnings>
                     <annotationProcessorPaths>
                         <path>
-                            <groupId>io.github.thriftannotationlint</groupId>
+                            <groupId>io.github.ezraio</groupId>
                             <artifactId>thrift-annotation-lint</artifactId>
                             <version>${thrift.annotation.lint.version}</version>
                         </path>

@@ -7,11 +7,13 @@ the project intends to use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-30
+
 ### Changed
 
 - Established the ThriftAnnotationLint Java package, processor entry point,
   processor options, and
-  `io.github.thriftannotationlint:thrift-annotation-lint` coordinates.
+  `io.github.ezraio:thrift-annotation-lint` coordinates.
 - Replaced compiler-internal APIs with a standard JSR 269 processor design.
 - Standardized all diagnostics on English `AWxxxx` rule codes.
 - Moved Facebook Swift dependencies to the test classpath.
