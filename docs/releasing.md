@@ -25,6 +25,12 @@ Do not upload until the Central Portal shows `io.github.ezraio` as verified.
 5. Click **Publish** only after checking the coordinates and artifacts.
 6. Tag the exact published commit and create the matching GitHub Release.
 
+If the Portal UI is unavailable, copy the validated deployment UUID from the
+upload workflow log and run **Publish validated Maven Central deployment**.
+That workflow verifies the deployment UUID, `VALIDATED` state, and exact
+`io.github.ezraio:thrift-annotation-lint:0.2.1` component before calling the
+Central Publisher API and waiting for `PUBLISHED`.
+
 For local publishing, configure a Maven server named `central` in
 `~/.m2/settings.xml`, import the GPG private key, and run:
 

@@ -1,0 +1,75 @@
+name: Publish validated Maven Central deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        description: Validated Central Portal deployment UUID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Verify and publish deployment
+        shell: bash
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          DEPLOYMENT_ID: ${{ inputs.deployment_id }}
+          EXPECTED_PURL: pkg:maven/io.github.ezraio/thrift-annotation-lint@0.2.1
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$DEPLOYMENT_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+            echo "Invalid Central deployment UUID" >&2
+            exit 1
+          fi
+
+          auth="$(printf '%s:%s' "$CENTRAL_USERNAME" "$CENTRAL_PASSWORD" | base64 | tr -d '\n')"
+          status_url="https://central.sonatype.com/api/v1/publisher/status?id=$DEPLOYMENT_ID"
+          deployment_url="https://central.sonatype.com/api/v1/publisher/deployment/$DEPLOYMENT_ID"
+
+          status="$(curl --silent --show-error --fail --request POST \
+            --header "Authorization: Bearer $auth" \
+            "$status_url")"
+          state="$(jq --raw-output '.deploymentState' <<<"$status")"
+
+          if [[ "$state" != "VALIDATED" ]]; then
+            echo "Expected VALIDATED deployment, found: $state" >&2
+            exit 1
+          fi
+          if ! jq --exit-status --arg purl "$EXPECTED_PURL" \
+            '.purls | index($purl) != null' <<<"$status" >/dev/null; then
+            echo "Deployment does not contain expected component: $EXPECTED_PURL" >&2
+            exit 1
+          fi
+
+          curl --silent --show-error --fail --request POST \
+            --header "Authorization: Bearer $auth" \
+            "$deployment_url"
+
+          for attempt in {1..120}; do
+            status="$(curl --silent --show-error --fail --request POST \
+              --header "Authorization: Bearer $auth" \
+              "$status_url")"
+            state="$(jq --raw-output '.deploymentState' <<<"$status")"
+            echo "Central deployment state: $state"
+            if [[ "$state" == "PUBLISHED" ]]; then
+              exit 0
+            fi
+            if [[ "$state" == "FAILED" ]]; then
+              jq '.errors' <<<"$status" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          echo "Timed out waiting for Central publication" >&2
+          exit 1
