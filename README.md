@@ -76,6 +76,25 @@ ThriftAnnotationLint runs as a standard JSR 269 annotation processor so it can:
 - keep the checker out of the application runtime—the published JAR is needed
   only on the annotation-processor path.
 
+### Why this matters in a staged release pipeline
+
+Enterprise services often publish model or client JARs before releasing the
+server that consumes them. If an annotation mistake is discovered only during
+codec initialization, integration tests, application startup, or deployment,
+the feedback arrives after packaging and potentially after a long release
+pipeline has already run.
+
+When ThriftAnnotationLint is enabled in the application build, reachable models
+from the current source set and classpath are checked during `javac`. The
+consumer service therefore fails at compilation—with an exact source
+location—before slow tests, packaging, deployment, or rollout begin.
+
+This shortens the feedback loop, avoids publishing a server artifact that
+cannot initialize its Thrift codec, and reduces the risk of discovering
+metadata errors in production. Runtime codec and integration tests are still
+required for behavior that depends on executable values or runtime
+configuration.
+
 Static analysis cannot prove behavior that requires running application code,
 so codec round-trip tests still complement these checks. See
 [Compile-time and runtime boundary](#compile-time-and-runtime-boundary).
