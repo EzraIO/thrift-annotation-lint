@@ -10,6 +10,10 @@ import javax.lang.model.element.TypeElement;
 
 /** Centralizes Java declaration precedence for Swift models. */
 public final class SwiftModelClassifier {
+    private static final int STRUCT_PRIORITY = 0;
+    private static final int UNION_PRIORITY = 1;
+    private static final int ENUM_PRIORITY = 2;
+
     public SwiftModel.Kind modelKind(TypeElement type) {
         if (type.getKind() == ElementKind.ENUM) {
             return SwiftModel.Kind.ENUM;
@@ -27,11 +31,11 @@ public final class SwiftModelClassifier {
 
     public int priority(SwiftModel.Kind kind) {
         if (kind == SwiftModel.Kind.STRUCT) {
-            return 0;
+            return STRUCT_PRIORITY;
         }
         if (kind == SwiftModel.Kind.UNION) {
-            return 1;
+            return UNION_PRIORITY;
         }
-        return 2;
+        return ENUM_PRIORITY;
     }
 }

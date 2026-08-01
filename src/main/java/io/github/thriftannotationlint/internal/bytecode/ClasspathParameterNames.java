@@ -20,6 +20,9 @@ import java.util.Map;
 
 /** Loads and caches classpath metadata used by Swift's Paranamer integration. */
 public final class ClasspathParameterNames {
+    private static final int CACHE_INITIAL_CAPACITY = 16;
+    private static final float CACHE_LOAD_FACTOR = 0.75f;
+    private static final boolean CACHE_ACCESS_ORDER = true;
     private static final int MAX_CACHED_CLASSES = 128;
     private static final long CLASS_LOOKUP_BASE_WEIGHT = 128L;
     private static final long LOOKUP_RESULT_BASE_WEIGHT = 48L;
@@ -34,7 +37,8 @@ public final class ClasspathParameterNames {
     private final JvmDescriptorEncoder descriptorEncoder;
     private final ClassFileParameterNameParser parser;
     private final Map<String, ClassLookup> cache =
-            new LinkedHashMap<String, ClassLookup>(16, 0.75f, true);
+            new LinkedHashMap<String, ClassLookup>(
+                    CACHE_INITIAL_CAPACITY, CACHE_LOAD_FACTOR, CACHE_ACCESS_ORDER);
     private long cachedWeightBytes;
 
     public ClasspathParameterNames(ProcessingEnvironment environment) {

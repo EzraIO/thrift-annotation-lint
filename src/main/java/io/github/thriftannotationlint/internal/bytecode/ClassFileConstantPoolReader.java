@@ -20,21 +20,21 @@ final class ClassFileConstantPoolReader {
                 utf8[index] = data.readUTF();
             }
             else if (isFourByteEntry(tag)) {
-                dataReader.skipFully(data, 4);
+                dataReader.skipFully(data, ClassFileFormat.INTEGER_OR_FLOAT_INFO_BYTES);
             }
             else if (tag == ClassFileFormat.CONSTANT_LONG
                     || tag == ClassFileFormat.CONSTANT_DOUBLE) {
-                dataReader.skipFully(data, 8);
+                dataReader.skipFully(data, ClassFileFormat.LONG_OR_DOUBLE_INFO_BYTES);
                 index++;
             }
             else if (isTwoByteEntry(tag)) {
-                dataReader.skipFully(data, 2);
+                dataReader.skipFully(data, ClassFileFormat.SINGLE_INDEX_INFO_BYTES);
             }
             else if (isReferenceEntry(tag)) {
-                dataReader.skipFully(data, 4);
+                dataReader.skipFully(data, ClassFileFormat.REFERENCE_INFO_BYTES);
             }
             else if (tag == ClassFileFormat.CONSTANT_METHOD_HANDLE) {
-                dataReader.skipFully(data, 3);
+                dataReader.skipFully(data, ClassFileFormat.METHOD_HANDLE_INFO_BYTES);
             }
             else {
                 throw new IOException("Unsupported class-file constant-pool tag " + tag);

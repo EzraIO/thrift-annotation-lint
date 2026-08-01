@@ -15,6 +15,8 @@ import java.util.Map;
 
 /** Validates readable and writable runtime access paths. */
 final class LogicalFieldAccessRules {
+    private static final int FIRST_CONFLICTING_DECLARATION_INDEX = 1;
+
     void validateAccessPaths(
             LogicalFieldValidationContext context,
             ResolvedLogicalFields.LogicalField field,
@@ -32,8 +34,9 @@ final class LogicalFieldAccessRules {
             findings.add(Finding.error(
                     DiagnosticCode.MISSING_ACCESS_PATH,
                     field.firstPart().element(),
-                    "Thrift model '" + context.model().displayName() + "' field '"
-                            + field.displayName() + "' does not have a valid " + missing + " path."));
+                    ValidationText.modelField(
+                            context.model().displayName(), field.displayName())
+                            + " does not have a valid " + missing + " path."));
         }
     }
 
@@ -79,9 +82,9 @@ final class LogicalFieldAccessRules {
         if (winningExtractors.size() > 1) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_METHOD_OR_CONSTRUCTOR,
-                    winningExtractors.get(1).declaration(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' declares multiple "
+                    winningExtractors.get(FIRST_CONFLICTING_DECLARATION_INDEX).declaration(),
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " declares multiple "
                             + winningExtractors.get(0).source().name().toLowerCase(Locale.ROOT)
                             + " extraction paths; Swift retains only one, selected by "
                             + "unspecified reflection order."));
@@ -106,9 +109,9 @@ final class LogicalFieldAccessRules {
             List<FieldPart> injections = new ArrayList<FieldPart>(methodInjections.values());
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_METHOD_OR_CONSTRUCTOR,
-                    injections.get(1).declaration(),
-                    "Thrift union '" + model.displayName() + "' field '"
-                            + field.displayName() + "' declares multiple method injection paths; "
+                    injections.get(FIRST_CONFLICTING_DECLARATION_INDEX).declaration(),
+                    ValidationText.unionField(model.displayName(), field.displayName())
+                            + " declares multiple method injection paths; "
                             + "Swift retains only one, selected by unspecified reflection order."));
         }
     }

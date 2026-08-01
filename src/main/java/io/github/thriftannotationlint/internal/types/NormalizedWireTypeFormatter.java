@@ -72,7 +72,7 @@ final class NormalizedWireTypeFormatter {
 
     private String simpleType(TypeMirror type) {
         if (type.getKind() == TypeKind.ERROR) {
-            return "ERROR";
+            return WireTypeTokens.ERROR;
         }
         if (WireTypeSupport.isSupportedPrimitive(type.getKind())) {
             return type.getKind().name();
@@ -92,7 +92,7 @@ final class NormalizedWireTypeFormatter {
             Set<String> visiting,
             boolean preserveStructArguments) {
         if (identityFormatter.isModelTypeVariable(type)) {
-            return "DEFERRED_TYPE_VARIABLE";
+            return WireTypeTokens.DEFERRED_TYPE_VARIABLE;
         }
         TypeMirror rawUpperBound = firstUpperBound(type.getUpperBound());
         if (preserveStructArguments && isAnnotatedStructType(rawUpperBound)) {
@@ -122,7 +122,8 @@ final class NormalizedWireTypeFormatter {
             ThriftAnnotationDialect dialect,
             Set<String> visiting,
             boolean preserveStructArguments) {
-        String visitKey = "NORMALIZED:" + preserveStructArguments + ":" + type;
+        String visitKey = WireTypeTokens.NORMALIZED_VISIT_PREFIX
+                + preserveStructArguments + ":" + type;
         if (!visiting.add(visitKey)) {
             return null;
         }
@@ -147,10 +148,10 @@ final class NormalizedWireTypeFormatter {
             return catalogType.typeName;
         }
         if (catalogType.kind == WireTypeClassifier.Kind.BINARY) {
-            return "BINARY:java.nio.ByteBuffer";
+            return WireTypeTokens.BINARY_TYPE;
         }
         if (catalogType.kind == WireTypeClassifier.Kind.ENUM) {
-            return "ENUM:" + catalogType.typeName;
+            return WireTypeTokens.ENUM_PREFIX + catalogType.typeName;
         }
         if (catalogType.kind == WireTypeClassifier.Kind.OPTIONAL) {
             return formatOptional(catalogType, dialect, visiting);
@@ -183,7 +184,10 @@ final class NormalizedWireTypeFormatter {
             }
             return null;
         }
-        return arguments.size() == 1 ? format(arguments.get(0), dialect, visiting, true) : null;
+        return arguments.size() == GenericTypeShape.VALUE_ARGUMENT_COUNT
+                ? format(arguments.get(GenericTypeShape.VALUE_ARGUMENT_INDEX),
+                dialect, visiting, true)
+                : null;
     }
 
     private String formatMap(
@@ -191,12 +195,16 @@ final class NormalizedWireTypeFormatter {
             ThriftAnnotationDialect dialect,
             Set<String> visiting) {
         List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-        if (arguments.size() != 2) {
+        if (arguments.size() != GenericTypeShape.MAP_ARGUMENT_COUNT) {
             return null;
         }
-        String key = format(arguments.get(0), dialect, visiting, true);
-        String value = format(arguments.get(1), dialect, visiting, true);
-        return key == null || value == null ? null : "MAP<" + key + "," + value + ">";
+        String key = format(arguments.get(GenericTypeShape.MAP_KEY_ARGUMENT_INDEX),
+                dialect, visiting, true);
+        String value = format(arguments.get(GenericTypeShape.MAP_VALUE_ARGUMENT_INDEX),
+                dialect, visiting, true);
+        return key == null || value == null
+                ? null
+                : WireTypeTokens.MAP_PREFIX + key + "," + value + ">";
     }
 
     private String formatCollection(
@@ -204,14 +212,17 @@ final class NormalizedWireTypeFormatter {
             ThriftAnnotationDialect dialect,
             Set<String> visiting) {
         List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-        if (arguments.size() != 1) {
+        if (arguments.size() != GenericTypeShape.VALUE_ARGUMENT_COUNT) {
             return null;
         }
-        String value = format(arguments.get(0), dialect, visiting, true);
+        String value = format(arguments.get(GenericTypeShape.VALUE_ARGUMENT_INDEX),
+                dialect, visiting, true);
         if (value == null) {
             return null;
         }
-        return (catalogType.kind == WireTypeClassifier.Kind.SET ? "SET<" : "LIST<")
+        return (catalogType.kind == WireTypeClassifier.Kind.SET
+                ? WireTypeTokens.SET_PREFIX
+                : WireTypeTokens.LIST_PREFIX)
                 + value + ">";
     }
 
@@ -222,13 +233,14 @@ final class NormalizedWireTypeFormatter {
             boolean preserveStructArguments) {
         List<? extends TypeMirror> arguments = declaredType.getTypeArguments();
         if (arguments.isEmpty() || !preserveStructArguments) {
-            return "STRUCT:" + catalogType.typeName;
+            return WireTypeTokens.STRUCT_PREFIX + catalogType.typeName;
         }
         List<String> normalizedArguments = new ArrayList<String>();
         for (TypeMirror argument : arguments) {
             normalizedArguments.add(identityFormatter.javaTypeIdentity(argument, visiting, true));
         }
-        return "STRUCT:" + catalogType.typeName + "<" + join(normalizedArguments) + ">";
+        return WireTypeTokens.STRUCT_PREFIX + catalogType.typeName
+                + "<" + join(normalizedArguments) + ">";
     }
 
     private boolean isAnnotatedStructType(TypeMirror type) {

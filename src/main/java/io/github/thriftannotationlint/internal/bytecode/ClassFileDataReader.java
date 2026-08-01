@@ -51,6 +51,10 @@ final class ClassFileDataReader {
         skipFully(data, count * ClassFileFormat.U2_BYTES);
     }
 
+    void skipU2Values(DataInputStream data, int count) throws IOException {
+        skipFully(data, count * ClassFileFormat.U2_BYTES);
+    }
+
     void skipFully(DataInputStream data, int length) throws IOException {
         if (length < 0) {
             throw new IOException("Negative class-file structure length");

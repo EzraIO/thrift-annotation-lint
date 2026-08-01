@@ -22,7 +22,7 @@ to the offending source element.
   application runtime dependencies.
 - **Use either dialect:** verified against Facebook Swift and Airlift Drift.
 
-> **Project status:** `0.2.1` is a preview release. The processor is verified
+> **Project status:** `0.2.2` is a preview release. The processor is verified
 > against the public Facebook Swift `0.19.2`, `0.20.0`, `0.21.1`, `0.22.1`, and
 > `0.23.1` contracts and the Airlift Drift `1.18` annotation contract, plus deliberate
 > compile-time safety extensions described below. Its rule and diagnostic
@@ -82,8 +82,8 @@ so codec round-trip tests still complement these checks. See
 
 ## Quick start
 
-Version `0.2.1` is published on
-[Maven Central](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint/0.2.1).
+Version `0.2.2` is published on
+[Maven Central](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint/0.2.2).
 For an established codebase, begin with `warning` mode and switch to `strict`
 after reviewing the findings.
 
@@ -117,7 +117,7 @@ after reviewing the findings.
                     <path>
                         <groupId>io.github.ezraio</groupId>
                         <artifactId>thrift-annotation-lint</artifactId>
-                        <version>0.2.1</version>
+                        <version>0.2.2</version>
                     </path>
                 </annotationProcessorPaths>
                 <compilerArgs>
@@ -141,7 +141,7 @@ dependencies {
     compileOnly "com.facebook.swift:swift-annotations:0.23.1"
     // Or this for Airlift Drift models:
     // compileOnly "io.airlift.drift:drift-api:1.18"
-    annotationProcessor "io.github.ezraio:thrift-annotation-lint:0.2.1"
+    annotationProcessor "io.github.ezraio:thrift-annotation-lint:0.2.2"
 }
 
 tasks.withType(JavaCompile).configureEach {

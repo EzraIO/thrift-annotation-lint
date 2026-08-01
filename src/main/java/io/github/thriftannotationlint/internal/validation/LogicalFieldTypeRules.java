@@ -44,8 +44,8 @@ final class LogicalFieldTypeRules {
                 findings.add(Finding.error(
                         DiagnosticCode.UNSUPPORTED_JAVA_TYPE,
                         part.element(),
-                        "Thrift model '" + model.displayName() + "' field '"
-                                + field.displayName() + "' uses unsupported Java type '" + type + "'."));
+                        ValidationText.modelField(model.displayName(), field.displayName())
+                                + " uses unsupported Java type '" + type + "'."));
                 break;
             }
             String carrierShape = typeInspector.carrierShape(type, model.dialect());
@@ -54,8 +54,8 @@ final class LogicalFieldTypeRules {
                 findings.add(Finding.error(
                         DiagnosticCode.CONFLICTING_JAVA_TYPES,
                         part.element(),
-                        "Thrift model '" + model.displayName() + "' field '"
-                                + field.displayName() + "' declares inconsistent Java types "
+                        ValidationText.modelField(model.displayName(), field.displayName())
+                                + " declares inconsistent Java types "
                                 + distinctTypes + "."));
                 break;
             }
@@ -104,8 +104,8 @@ final class LogicalFieldTypeRules {
             findings.add(Finding.error(
                     DiagnosticCode.CONFLICTING_JAVA_TYPES,
                     part.element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' uses Java type '" + javaType
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " uses Java type '" + javaType
                             + "' on a " + direction + " path that is incompatible with "
                             + model.dialect().runtimeName() + "'s "
                             + "canonical '" + typeInspector.canonicalDecodedTypeName(

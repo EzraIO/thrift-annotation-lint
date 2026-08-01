@@ -32,15 +32,15 @@ final class JavaTypeIdentityFormatter {
             Set<String> visiting,
             boolean deferModelTypeVariables) {
         if (type == null) {
-            return "JAVA:<unknown>";
+            return WireTypeTokens.JAVA_PREFIX + "<unknown>";
         }
         if (type.getKind() == TypeKind.TYPEVAR) {
             return deferModelTypeVariables && isModelTypeVariable(type)
-                    ? "DEFERRED_TYPE_VARIABLE"
+                    ? WireTypeTokens.DEFERRED_TYPE_VARIABLE
                     : typeVariableIdentity(type);
         }
         if (type.getKind() == TypeKind.ARRAY) {
-            return "JAVA_ARRAY<"
+            return WireTypeTokens.JAVA_ARRAY_PREFIX
                     + javaTypeIdentity(
                     ((ArrayType) type).getComponentType(),
                     visiting,
@@ -49,19 +49,19 @@ final class JavaTypeIdentityFormatter {
         if (type.getKind() == TypeKind.WILDCARD) {
             WildcardType wildcard = (WildcardType) type;
             if (wildcard.getExtendsBound() != null) {
-                return "JAVA_EXTENDS<"
+                return WireTypeTokens.JAVA_EXTENDS_PREFIX
                         + javaTypeIdentity(
                         wildcard.getExtendsBound(), visiting, deferModelTypeVariables) + ">";
             }
             if (wildcard.getSuperBound() != null) {
-                return "JAVA_SUPER<"
+                return WireTypeTokens.JAVA_SUPER_PREFIX
                         + javaTypeIdentity(
                         wildcard.getSuperBound(), visiting, deferModelTypeVariables) + ">";
             }
-            return "JAVA_WILDCARD";
+            return WireTypeTokens.JAVA_WILDCARD;
         }
         if (type.getKind() != TypeKind.DECLARED) {
-            return "JAVA:" + type.getKind().name();
+            return WireTypeTokens.JAVA_PREFIX + type.getKind().name();
         }
 
         DeclaredType declared = (DeclaredType) type;
@@ -69,24 +69,24 @@ final class JavaTypeIdentityFormatter {
         String name = element instanceof TypeElement
                 ? ((TypeElement) element).getQualifiedName().toString()
                 : type.toString();
-        String visitKey = "JAVA_IDENTITY:" + type;
+        String visitKey = WireTypeTokens.JAVA_IDENTITY_VISIT_PREFIX + type;
         if (!visiting.add(visitKey)) {
-            return "JAVA:" + name;
+            return WireTypeTokens.JAVA_PREFIX + name;
         }
         try {
             List<String> arguments = new ArrayList<String>();
             TypeMirror enclosing = declared.getEnclosingType();
             if (enclosing != null && enclosing.getKind() == TypeKind.DECLARED) {
-                arguments.add("JAVA_OWNER<" + javaTypeIdentity(
+                arguments.add(WireTypeTokens.JAVA_OWNER_PREFIX + javaTypeIdentity(
                         enclosing, visiting, deferModelTypeVariables) + ">");
             }
             if (declared.getTypeArguments().isEmpty() && arguments.isEmpty()) {
-                return "JAVA:" + name;
+                return WireTypeTokens.JAVA_PREFIX + name;
             }
             for (TypeMirror argument : declared.getTypeArguments()) {
                 arguments.add(javaTypeIdentity(argument, visiting, deferModelTypeVariables));
             }
-            return "JAVA:" + name + "<" + join(arguments) + ">";
+            return WireTypeTokens.JAVA_PREFIX + name + "<" + join(arguments) + ">";
         }
         finally {
             visiting.remove(visitKey);
@@ -119,9 +119,9 @@ final class JavaTypeIdentityFormatter {
     String typeVariableIdentity(TypeMirror type) {
         Element parameter = ((TypeVariable) type).asElement();
         if (!(parameter instanceof TypeParameterElement)) {
-            return "EXECUTABLE_TYPE_VARIABLE:" + type;
+            return WireTypeTokens.EXECUTABLE_TYPE_VARIABLE_PREFIX + type;
         }
-        return "EXECUTABLE_TYPE_VARIABLE:"
+        return WireTypeTokens.EXECUTABLE_TYPE_VARIABLE_PREFIX
                 + ElementNames.qualifiedMemberName(parameter);
     }
 

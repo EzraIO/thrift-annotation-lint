@@ -72,7 +72,7 @@ final class WireTypeSupport {
             DeclaredType type,
             ThriftAnnotationDialect dialect,
             Set<String> visiting) {
-        String visitKey = "SUPPORTED:" + type;
+        String visitKey = WireTypeTokens.SUPPORTED_VISIT_PREFIX + type;
         if (!visiting.add(visitKey)) {
             return false;
         }
@@ -109,7 +109,9 @@ final class WireTypeSupport {
         if (arguments.isEmpty()) {
             return !catalogType.typeName.startsWith("java.util.Optional");
         }
-        return arguments.size() == 1 && isSupported(arguments.get(0), dialect, visiting);
+        return arguments.size() == GenericTypeShape.VALUE_ARGUMENT_COUNT
+                && isSupported(arguments.get(GenericTypeShape.VALUE_ARGUMENT_INDEX),
+                dialect, visiting);
     }
 
     private boolean hasSupportedContainerArguments(
@@ -117,7 +119,9 @@ final class WireTypeSupport {
             ThriftAnnotationDialect dialect,
             Set<String> visiting) {
         List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-        int expectedArguments = catalogType.kind == WireTypeClassifier.Kind.MAP ? 2 : 1;
+        int expectedArguments = catalogType.kind == WireTypeClassifier.Kind.MAP
+                ? GenericTypeShape.MAP_ARGUMENT_COUNT
+                : GenericTypeShape.VALUE_ARGUMENT_COUNT;
         if (arguments.size() != expectedArguments) {
             return false;
         }

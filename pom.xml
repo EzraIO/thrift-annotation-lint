@@ -6,7 +6,7 @@
 
     <groupId>io.github.ezraio</groupId>
     <artifactId>thrift-annotation-lint</artifactId>
-    <version>0.2.1</version>
+    <version>0.2.2</version>
     <name>ThriftAnnotationLint</name>
     <description>Compile-time validation for Java models using Facebook Swift or Airlift Drift Thrift annotations.</description>
     <url>https://github.com/EzraIO/thrift-annotation-lint</url>
@@ -31,7 +31,7 @@
         <connection>scm:git:https://github.com/EzraIO/thrift-annotation-lint.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/EzraIO/thrift-annotation-lint.git</developerConnection>
         <url>https://github.com/EzraIO/thrift-annotation-lint</url>
-        <tag>v0.2.1</tag>
+        <tag>v0.2.2</tag>
     </scm>
 
     <issueManagement>

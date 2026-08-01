@@ -45,8 +45,8 @@ final class NormalizedTypeCompatibility {
             return false;
         }
         if (left.equals(right)
-                || "DEFERRED_TYPE_VARIABLE".equals(left)
-                || "DEFERRED_TYPE_VARIABLE".equals(right)) {
+                || WireTypeTokens.DEFERRED_TYPE_VARIABLE.equals(left)
+                || WireTypeTokens.DEFERRED_TYPE_VARIABLE.equals(right)) {
             return true;
         }
 
@@ -74,7 +74,9 @@ final class NormalizedTypeCompatibility {
         if (left == null || right == null) {
             return false;
         }
-        if (left.equals(right) || "DEFERRED".equals(left) || "DEFERRED".equals(right)) {
+        if (left.equals(right)
+                || WireTypeTokens.DEFERRED.equals(left)
+                || WireTypeTokens.DEFERRED.equals(right)) {
             return true;
         }
         String leftKind = genericKind(left);
@@ -186,7 +188,9 @@ final class NormalizedTypeCompatibility {
             return true;
         }
 
-        String visitKey = (readable ? "READ:" : "WRITE:") + type;
+        String visitKey = (readable
+                ? WireTypeTokens.READ_VISIT_PREFIX
+                : WireTypeTokens.WRITE_VISIT_PREFIX) + type;
         if (!visiting.add(visitKey)) {
             return true;
         }
@@ -248,37 +252,37 @@ final class NormalizedTypeCompatibility {
     }
 
     private String genericKind(String normalizedType) {
-        if (normalizedType.startsWith("LIST<")) {
-            return "LIST";
+        if (normalizedType.startsWith(WireTypeTokens.LIST_PREFIX)) {
+            return WireTypeTokens.LIST_KIND;
         }
-        if (normalizedType.startsWith("SET<")) {
-            return "SET";
+        if (normalizedType.startsWith(WireTypeTokens.SET_PREFIX)) {
+            return WireTypeTokens.SET_KIND;
         }
-        if (normalizedType.startsWith("MAP<")) {
-            return "MAP";
+        if (normalizedType.startsWith(WireTypeTokens.MAP_PREFIX)) {
+            return WireTypeTokens.MAP_KIND;
         }
-        if (normalizedType.startsWith("OPTIONAL<")) {
-            return "OPTIONAL";
+        if (normalizedType.startsWith(WireTypeTokens.OPTIONAL_PREFIX)) {
+            return WireTypeTokens.OPTIONAL_KIND;
         }
-        if (normalizedType.startsWith("STRUCT:")) {
+        if (normalizedType.startsWith(WireTypeTokens.STRUCT_PREFIX)) {
             int opening = normalizedType.indexOf('<');
             return opening < 0 ? null : normalizedType.substring(0, opening);
         }
-        if (normalizedType.startsWith("JAVA:")) {
+        if (normalizedType.startsWith(WireTypeTokens.JAVA_PREFIX)) {
             int opening = normalizedType.indexOf('<');
             return opening < 0 ? null : normalizedType.substring(0, opening);
         }
-        if (normalizedType.startsWith("JAVA_ARRAY<")) {
-            return "JAVA_ARRAY";
+        if (normalizedType.startsWith(WireTypeTokens.JAVA_ARRAY_PREFIX)) {
+            return WireTypeTokens.JAVA_ARRAY_KIND;
         }
-        if (normalizedType.startsWith("JAVA_EXTENDS<")) {
-            return "JAVA_EXTENDS";
+        if (normalizedType.startsWith(WireTypeTokens.JAVA_EXTENDS_PREFIX)) {
+            return WireTypeTokens.JAVA_EXTENDS_KIND;
         }
-        if (normalizedType.startsWith("JAVA_SUPER<")) {
-            return "JAVA_SUPER";
+        if (normalizedType.startsWith(WireTypeTokens.JAVA_SUPER_PREFIX)) {
+            return WireTypeTokens.JAVA_SUPER_KIND;
         }
-        if (normalizedType.startsWith("JAVA_OWNER<")) {
-            return "JAVA_OWNER";
+        if (normalizedType.startsWith(WireTypeTokens.JAVA_OWNER_PREFIX)) {
+            return WireTypeTokens.JAVA_OWNER_KIND;
         }
         return null;
     }

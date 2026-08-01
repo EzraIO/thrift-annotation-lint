@@ -13,6 +13,8 @@ import java.util.Set;
 
 /** Validates resolved field IDs and cross-field uniqueness. */
 final class LogicalFieldIdRules {
+    private static final int FIRST_CONFLICTING_DECLARATION_INDEX = 1;
+
     void validateField(
             LogicalFieldValidationContext context,
             ResolvedLogicalFields.LogicalField field,
@@ -48,14 +50,16 @@ final class LogicalFieldIdRules {
             for (ResolvedLogicalFields.LogicalField field : fields) {
                 names.add(field.displayName());
             }
-            ResolvedLogicalFields.LogicalField targetField = fields.get(1);
+            ResolvedLogicalFields.LogicalField targetField =
+                    fields.get(FIRST_CONFLICTING_DECLARATION_INDEX);
             FieldPart target = targetField.lastPartWithId();
             findings.add(Finding.error(
                     DiagnosticCode.DUPLICATE_FIELD_ID,
                     target.element(),
                     target.thriftField().annotation(),
                     target.thriftField().idSource(),
-                    "Thrift model '" + model.displayName() + "' uses field ID "
+                    ValidationText.model(model.displayName())
+                            + " uses field ID "
                             + entry.getKey() + " for different logical fields " + names + "."));
         }
     }
@@ -71,8 +75,8 @@ final class LogicalFieldIdRules {
                 target.element(),
                 target.thriftField().annotation(),
                 target.thriftField().idSource(),
-                "Thrift model '" + model.displayName() + "' field '"
-                        + field.displayName() + "' declares conflicting IDs " + ids + "."));
+                ValidationText.modelField(model.displayName(), field.displayName())
+                        + " declares conflicting IDs " + ids + "."));
     }
 
     private void addMissingId(
@@ -85,8 +89,8 @@ final class LogicalFieldIdRules {
             findings.add(Finding.error(
                     DiagnosticCode.MISSING_FIELD_ID,
                     target.element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' does not resolve a field ID after "
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " does not resolve a field ID after "
                             + "Swift's two-phase name inference."));
         }
     }

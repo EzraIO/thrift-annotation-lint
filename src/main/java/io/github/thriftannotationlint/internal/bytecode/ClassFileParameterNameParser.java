@@ -17,6 +17,9 @@ import java.util.Map;
  * It deliberately ignores MethodParameters because supported Swift releases do the same.
  */
 final class ClassFileParameterNameParser {
+    private static final String CODE_ATTRIBUTE = "Code";
+    private static final String LOCAL_VARIABLE_TABLE_ATTRIBUTE = "LocalVariableTable";
+    private static final String METHOD_KEY_SEPARATOR = "\u0000";
     private static final int MAX_METHODS_PER_CLASS = 8192;
     private static final int MAX_LVT_ENTRIES_PER_CLASS = 65536;
     private static final long MAX_CLASS_LOOKUP_WEIGHT_BYTES = 2L * 1024L * 1024L;
@@ -38,13 +41,10 @@ final class ClassFileParameterNameParser {
         if (data.readInt() != ClassFileFormat.MAGIC) {
             throw new IOException("Invalid class-file magic");
         }
-        data.readUnsignedShort();
-        data.readUnsignedShort();
+        dataReader.skipU2Values(data, ClassFileFormat.CLASS_VERSION_U2_FIELDS);
         String[] utf8 = constantPoolReader.read(data);
 
-        data.readUnsignedShort();
-        data.readUnsignedShort();
-        data.readUnsignedShort();
+        dataReader.skipU2Values(data, ClassFileFormat.CLASS_IDENTITY_U2_FIELDS);
         dataReader.skipU2Table(data);
         skipMembers(data);
 
@@ -66,7 +66,7 @@ final class ClassFileParameterNameParser {
             for (int attributeIndex = 0; attributeIndex < attributeCount; attributeIndex++) {
                 String attributeName = dataReader.utf8Value(utf8, data.readUnsignedShort());
                 int attributeLength = data.readInt();
-                if ("Code".equals(attributeName)) {
+                if (CODE_ATTRIBUTE.equals(attributeName)) {
                     byte[] attribute = dataReader.readBytes(data, attributeLength);
                     readCode(attribute, utf8, layout, parameterNames, budget);
                 }
@@ -74,7 +74,7 @@ final class ClassFileParameterNameParser {
                     dataReader.skipAttribute(data, attributeLength);
                 }
             }
-            String key = name + "\u0000" + descriptorParser.parameters(descriptor);
+            String key = name + METHOD_KEY_SEPARATOR + descriptorParser.parameters(descriptor);
             if (!methods.containsKey(key)) {
                 MethodLookup result = parameterNames.toLookupResult(layout.parameterCount);
                 budget.addLookupWeight(key, result);
@@ -111,9 +111,7 @@ final class ClassFileParameterNameParser {
     private void skipMembers(DataInputStream data) throws IOException {
         int count = data.readUnsignedShort();
         for (int index = 0; index < count; index++) {
-            data.readUnsignedShort();
-            data.readUnsignedShort();
-            data.readUnsignedShort();
+            dataReader.skipU2Values(data, ClassFileFormat.MEMBER_HEADER_U2_FIELDS);
             skipAttributes(data);
         }
     }
@@ -134,8 +132,7 @@ final class ClassFileParameterNameParser {
             MethodParameterNames names,
             ParseBudget budget) throws IOException {
         DataInputStream data = new DataInputStream(new ByteArrayInputStream(attribute));
-        data.readUnsignedShort();
-        data.readUnsignedShort();
+        dataReader.skipU2Values(data, ClassFileFormat.CODE_HEADER_U2_FIELDS);
         int codeLength = data.readInt();
         if (codeLength < 0 || codeLength > ClassFileFormat.MAX_CODE_LENGTH) {
             throw new IOException("Invalid Code attribute length");
@@ -148,7 +145,7 @@ final class ClassFileParameterNameParser {
         for (int index = 0; index < attributeCount; index++) {
             String name = dataReader.utf8Value(utf8, data.readUnsignedShort());
             int attributeLength = data.readInt();
-            if ("LocalVariableTable".equals(name)) {
+            if (LOCAL_VARIABLE_TABLE_ATTRIBUTE.equals(name)) {
                 // Paranamer 2.8 retains the last LocalVariableTable attribute encountered in a
                 // Code attribute. Multiple tables are legal, so do not concatenate their rows.
                 localVariableTable = dataReader.readBytes(data, attributeLength);

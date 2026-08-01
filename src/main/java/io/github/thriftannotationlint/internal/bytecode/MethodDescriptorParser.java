@@ -4,11 +4,19 @@ import java.io.IOException;
 
 /** Computes JVM local-variable slots for method parameters. */
 final class MethodDescriptorParser {
+    private static final int STATIC_FIRST_PARAMETER_SLOT = 0;
+    private static final int INSTANCE_FIRST_PARAMETER_SLOT = 1;
+    private static final int FIRST_PARAMETER_DESCRIPTOR_INDEX = 1;
+    private static final int SINGLE_SLOT_WIDTH = 1;
+    private static final int WIDE_SLOT_WIDTH = 2;
+
     Layout layout(String descriptor, boolean isStatic) throws IOException {
         int parameterCount = 0;
-        int firstSlot = isStatic ? 0 : 1;
+        int firstSlot = isStatic
+                ? STATIC_FIRST_PARAMETER_SLOT
+                : INSTANCE_FIRST_PARAMETER_SLOT;
         int slot = firstSlot;
-        int index = 1;
+        int index = FIRST_PARAMETER_DESCRIPTOR_INDEX;
         while (index < descriptor.length() && descriptor.charAt(index) != ')') {
             parameterCount++;
             char type = descriptor.charAt(index);
@@ -27,13 +35,20 @@ final class MethodDescriptorParser {
                     throw invalid(descriptor);
                 }
             }
-            slot += array || type == 'L' ? 1 : (type == 'J' || type == 'D' ? 2 : 1);
+            slot += slotWidth(type, array);
             index++;
         }
         if (index >= descriptor.length() || descriptor.charAt(index) != ')') {
             throw invalid(descriptor);
         }
         return new Layout(parameterCount, firstSlot, slot);
+    }
+
+    private int slotWidth(char type, boolean array) {
+        if (!array && (type == 'J' || type == 'D')) {
+            return WIDE_SLOT_WIDTH;
+        }
+        return SINGLE_SLOT_WIDTH;
     }
 
     String parameters(String descriptor) throws IOException {

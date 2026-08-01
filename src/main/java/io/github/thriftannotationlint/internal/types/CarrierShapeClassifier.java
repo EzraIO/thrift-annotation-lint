@@ -31,14 +31,14 @@ final class CarrierShapeClassifier {
     private String classify(
             TypeMirror type,
             ThriftAnnotationDialect dialect,
-            Set<String> visiting) {
+        Set<String> visiting) {
         if (type == null || type.getKind() == TypeKind.ERROR) {
-            return "DEFERRED";
+            return WireTypeTokens.DEFERRED;
         }
         if (type.getKind() == TypeKind.TYPEVAR) {
             TypeVariable variable = (TypeVariable) type;
             if (identityFormatter.isModelTypeVariable(variable)) {
-                return "DEFERRED";
+                return WireTypeTokens.DEFERRED;
             }
             return classify(variable.getUpperBound(), dialect, visiting);
         }
@@ -47,14 +47,16 @@ final class CarrierShapeClassifier {
         }
         if (type.getKind() == TypeKind.INTERSECTION) {
             List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return bounds.isEmpty() ? "DEFERRED" : classify(bounds.get(0), dialect, visiting);
+            return bounds.isEmpty()
+                    ? WireTypeTokens.DEFERRED
+                    : classify(bounds.get(0), dialect, visiting);
         }
         if (type.getKind() != TypeKind.DECLARED) {
-            return "VALUE";
+            return WireTypeTokens.VALUE;
         }
-        String visitKey = "CARRIER:" + dialect + ":" + type;
+        String visitKey = WireTypeTokens.CARRIER_VISIT_PREFIX + dialect + ":" + type;
         if (!visiting.add(visitKey)) {
-            return "DEFERRED";
+            return WireTypeTokens.DEFERRED;
         }
         try {
             return classifyDeclared((DeclaredType) type, dialect, visiting);
@@ -73,23 +75,28 @@ final class CarrierShapeClassifier {
                 ? java.util.Collections.<TypeMirror>emptyList()
                 : catalogType.view.getTypeArguments();
         if (catalogType.kind == WireTypeClassifier.Kind.OPTIONAL) {
-            return arguments.size() == 1
-                    ? "OPTIONAL<" + classify(arguments.get(0), dialect, visiting) + ">"
-                    : "OPTIONAL_PRIMITIVE:" + catalogType.typeName;
+            return arguments.size() == GenericTypeShape.VALUE_ARGUMENT_COUNT
+                    ? WireTypeTokens.OPTIONAL_PREFIX + classify(
+                    arguments.get(GenericTypeShape.VALUE_ARGUMENT_INDEX), dialect, visiting) + ">"
+                    : WireTypeTokens.OPTIONAL_PRIMITIVE_PREFIX + catalogType.typeName;
         }
         if (catalogType.kind == WireTypeClassifier.Kind.MAP) {
-            return arguments.size() == 2
-                    ? "MAP<" + classify(arguments.get(0), dialect, visiting)
-                    + "," + classify(arguments.get(1), dialect, visiting) + ">"
-                    : "VALUE";
+            return arguments.size() == GenericTypeShape.MAP_ARGUMENT_COUNT
+                    ? WireTypeTokens.MAP_PREFIX + classify(
+                    arguments.get(GenericTypeShape.MAP_KEY_ARGUMENT_INDEX), dialect, visiting)
+                    + "," + classify(
+                    arguments.get(GenericTypeShape.MAP_VALUE_ARGUMENT_INDEX), dialect, visiting)
+                    + ">"
+                    : WireTypeTokens.VALUE;
         }
         if (catalogType.kind == WireTypeClassifier.Kind.SET
                 || catalogType.kind == WireTypeClassifier.Kind.LIST) {
-            return arguments.size() == 1
+            return arguments.size() == GenericTypeShape.VALUE_ARGUMENT_COUNT
                     ? catalogType.kind.name() + "<"
-                    + classify(arguments.get(0), dialect, visiting) + ">"
-                    : "VALUE";
+                    + classify(
+                    arguments.get(GenericTypeShape.VALUE_ARGUMENT_INDEX), dialect, visiting) + ">"
+                    : WireTypeTokens.VALUE;
         }
-        return "VALUE";
+        return WireTypeTokens.VALUE;
     }
 }

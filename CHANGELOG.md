@@ -7,6 +7,13 @@ the project intends to use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-01
+
+### Changed
+
+- Consolidated internal wire-type tokens and shared validation message prefixes;
+  behavior, diagnostic text, and public APIs remain unchanged.
+
 ## [0.2.1] - 2026-08-01
 
 ### Changed

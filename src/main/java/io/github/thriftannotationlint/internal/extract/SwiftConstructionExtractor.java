@@ -25,6 +25,8 @@ import java.util.Set;
 
 /** Extracts Swift construction metadata for direct models and builder-backed models. */
 final class SwiftConstructionExtractor {
+    private static final int FIRST_CONFLICTING_DECLARATION_INDEX = 1;
+
     private final Types types;
     private final SwiftMemberResolver memberResolver;
     private final SwiftFieldPartExtractor fieldPartExtractor;
@@ -134,7 +136,7 @@ final class SwiftConstructionExtractor {
         if (modelKind == SwiftModel.Kind.STRUCT && annotated.size() > 1) {
             findings.add(Finding.error(
                     DiagnosticCode.MULTIPLE_THRIFT_CONSTRUCTORS,
-                    annotated.get(1),
+                    annotated.get(FIRST_CONFLICTING_DECLARATION_INDEX),
                     "Thrift struct '" + modelType.getQualifiedName()
                             + "' has multiple constructors annotated with @ThriftConstructor."));
         }

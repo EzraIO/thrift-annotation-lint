@@ -25,6 +25,8 @@ import java.util.List;
 
 /** Extracts the reflection-visible @ThriftEnumValue method for an enum. */
 final class SwiftEnumMetadataExtractor {
+    private static final int FIRST_CONFLICTING_DECLARATION_INDEX = 1;
+
     private final Elements elements;
     private final Types types;
     private final SwiftMemberResolver memberResolver;
@@ -61,7 +63,7 @@ final class SwiftEnumMetadataExtractor {
         if (methods.size() > 1) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
-                    methods.get(1),
+                    methods.get(FIRST_CONFLICTING_DECLARATION_INDEX),
                     "Enum '" + enumType.getQualifiedName()
                             + "' must declare at most one @ThriftEnumValue method."));
         }
@@ -111,7 +113,7 @@ final class SwiftEnumMetadataExtractor {
             }
         }
         if (unknownValues.size() > 1) {
-            VariableElement target = unknownValues.get(1);
+            VariableElement target = unknownValues.get(FIRST_CONFLICTING_DECLARATION_INDEX);
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_ENUM_UNKNOWN_VALUE,
                     target,

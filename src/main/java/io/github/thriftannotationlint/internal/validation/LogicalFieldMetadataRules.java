@@ -39,8 +39,8 @@ final class LogicalFieldMetadataRules {
                         part.element(),
                         part.thriftField().annotation(),
                         idl.sourceValue(),
-                        "Thrift model '" + model.displayName() + "' field '"
-                                + field.displayName() + "' declares duplicate IDL annotation keys "
+                        ValidationText.modelField(model.displayName(), field.displayName())
+                                + " declares duplicate IDL annotation keys "
                                 + idl.duplicateKeys() + "."));
             }
             if (!idl.values().isEmpty()) {
@@ -54,8 +54,8 @@ final class LogicalFieldMetadataRules {
                     target.element(),
                     target.thriftField().annotation(),
                     target.thriftField().idlAnnotations().sourceValue(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' declares conflicting IDL annotation maps."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " declares conflicting IDL annotation maps."));
         }
     }
 
@@ -73,8 +73,8 @@ final class LogicalFieldMetadataRules {
             findings.add(Finding.error(
                     DiagnosticCode.CONFLICTING_FIELD_NAME,
                     field.lastPart().element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' declares multiple explicit names " + names + "."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " declares multiple explicit names " + names + "."));
         }
     }
 
@@ -88,8 +88,8 @@ final class LogicalFieldMetadataRules {
             findings.add(Finding.error(
                     DiagnosticCode.CONFLICTING_REQUIREDNESS,
                     target.element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' declares conflicting requiredness values "
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " declares conflicting requiredness values "
                             + values + "."));
         }
         if (model.kind() == SwiftModel.Kind.UNION
@@ -97,8 +97,8 @@ final class LogicalFieldMetadataRules {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_UNION_REQUIREDNESS,
                     field.lastPart().element(),
-                    "Thrift union '" + model.displayName() + "' field '"
-                            + field.displayName() + "' must not be marked required or optional."));
+                    ValidationText.unionField(model.displayName(), field.displayName())
+                            + " must not be marked required or optional."));
         }
     }
 
@@ -124,24 +124,22 @@ final class LogicalFieldMetadataRules {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_LEGACY_ID,
                     field.lastPart().element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName() + "' mixes isLegacyId=true and isLegacyId=false."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " mixes isLegacyId=true and isLegacyId=false."));
         }
         if (id < 0 && !legacyValues.contains(Boolean.TRUE)) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_LEGACY_ID,
                     field.lastPartWithId().element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName()
-                            + "' has a negative ID and must set isLegacyId=true."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " has a negative ID and must set isLegacyId=true."));
         }
         else if (id >= 0 && legacyValues.contains(Boolean.TRUE)) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_LEGACY_ID,
                     field.lastPartWithId().element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName()
-                            + "' sets isLegacyId=true for a non-negative ID."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " sets isLegacyId=true for a non-negative ID."));
         }
     }
 
@@ -159,9 +157,8 @@ final class LogicalFieldMetadataRules {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_RECURSIVE_FIELD,
                     field.lastPart().element(),
-                    "Thrift model '" + model.displayName() + "' field '"
-                            + field.displayName()
-                            + "' declares conflicting recursive-reference settings."));
+                    ValidationText.modelField(model.displayName(), field.displayName())
+                            + " declares conflicting recursive-reference settings."));
         }
         if (model.kind() == SwiftModel.Kind.STRUCT
                 && recursiveValues.contains(Boolean.TRUE)

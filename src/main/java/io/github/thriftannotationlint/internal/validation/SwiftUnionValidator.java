@@ -27,6 +27,9 @@ import java.util.Set;
 
 /** Applies Swift union-specific discriminator, payload, and construction rules. */
 final class SwiftUnionValidator {
+    private static final short DEFAULT_UNION_DISCRIMINATOR_FIELD_ID = 0;
+    private static final int FIRST_CONFLICTING_DECLARATION_INDEX = 1;
+
     private final Types types;
 
     SwiftUnionValidator(Types types) {
@@ -52,8 +55,8 @@ final class SwiftUnionValidator {
                     findings.add(Finding.error(
                             DiagnosticCode.CONFLICTING_FIELD_ID,
                             part.element(),
-                            "Thrift union '" + model.displayName() + "' field '"
-                                    + field.displayName() + "' collides with Swift's internal "
+                            ValidationText.unionField(model.displayName(), field.displayName())
+                                    + " collides with Swift's internal "
                                     + "union discriminator during "
                                     + (explicitPassCollision
                                     ? "explicit-name"
@@ -137,12 +140,13 @@ final class SwiftUnionValidator {
                 }
             }
             if (constructorPaths.size() > 1) {
-                FieldPart target = new ArrayList<FieldPart>(constructorPaths.values()).get(1);
+                FieldPart target = new ArrayList<FieldPart>(constructorPaths.values())
+                        .get(FIRST_CONFLICTING_DECLARATION_INDEX);
                 findings.add(Finding.error(
                         DiagnosticCode.INVALID_UNION_CONSTRUCTOR,
                         target.element(),
-                        "Thrift union '" + model.displayName() + "' field '"
-                                + field.displayName() + "' is mapped to multiple one-argument "
+                        ValidationText.unionField(model.displayName(), field.displayName())
+                                + " is mapped to multiple one-argument "
                                 + "@ThriftConstructor paths; Swift's selected constructor would "
                                 + "depend on reflection order."));
             }
@@ -150,8 +154,8 @@ final class SwiftUnionValidator {
                 findings.add(Finding.error(
                         DiagnosticCode.INVALID_UNION_CONSTRUCTOR,
                         field.firstPart().element(),
-                        "Thrift union '" + model.displayName() + "' field '"
-                                + field.displayName() + "' has no one-argument "
+                        ValidationText.unionField(model.displayName(), field.displayName())
+                                + " has no one-argument "
                                 + "@ThriftConstructor, and the construction type has no active "
                                 + "zero-argument constructor path for decoding this variant."));
             }
@@ -164,7 +168,7 @@ final class SwiftUnionValidator {
             List<Finding> findings) {
         ResolvedLogicalFields.IdResolution resolution = resolvedFields.idResolution();
         for (ResolvedLogicalFields.LogicalField field : resolvedFields.fields()) {
-            if (!field.ids(resolution).contains((short) 0)) {
+            if (!field.ids(resolution).contains(DEFAULT_UNION_DISCRIMINATOR_FIELD_ID)) {
                 continue;
             }
             FieldPart target = field.lastPartWithId();
@@ -173,8 +177,8 @@ final class SwiftUnionValidator {
                     target.element(),
                     target.thriftField().annotation(),
                     target.thriftField().idSource(),
-                    "Thrift union '" + model.displayName() + "' field '"
-                            + field.displayName() + "' uses ID 0, which collides with the default "
+                    ValidationText.unionField(model.displayName(), field.displayName())
+                            + " uses ID 0, which collides with the default "
                             + "compiler codec's initial no-field discriminator during decoding."));
         }
     }

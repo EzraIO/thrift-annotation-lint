@@ -28,6 +28,10 @@ public enum DiagnosticCode {
     INTERNAL_PROCESSOR_FAILURE("AW9002", true),
     VALIDATION_LIMIT_EXCEEDED("AW9003", true);
 
+    private static final int ALWAYS_ERROR_PRIORITY = 0;
+    private static final int STANDARD_PRIORITY = 1;
+    private static final int DERIVED_FINDING_PRIORITY = 2;
+
     private final String id;
     private final boolean alwaysError;
 
@@ -46,14 +50,14 @@ public enum DiagnosticCode {
 
     int reportingPriority() {
         if (alwaysError) {
-            return 0;
+            return ALWAYS_ERROR_PRIORITY;
         }
         // Missing IDs and access paths are commonly consequences of a more precise declaration
         // or conflict finding. Report the root cause first when old javac versions collapse
         // diagnostics that share a preferred source position.
         if (this == MISSING_FIELD_ID || this == MISSING_ACCESS_PATH) {
-            return 2;
+            return DERIVED_FINDING_PRIORITY;
         }
-        return 1;
+        return STANDARD_PRIORITY;
     }
 }
