@@ -16,6 +16,7 @@ import java.util.Set;
 public final class ThriftTypeInspector {
     private final JavaTypeIdentityFormatter identityFormatter;
     private final WireTypeClassifier classifier;
+    private final WireTypeSupport support;
     private final NormalizedTypeCompatibility compatibility;
     private final NormalizedWireTypeFormatter normalizedFormatter;
     private final CarrierShapeClassifier carrierShapeClassifier;
@@ -34,10 +35,13 @@ public final class ThriftTypeInspector {
                 types, identityFormatter, metrics);
         this.classifier = new WireTypeClassifier(
                 elements, hierarchyResolver, identityFormatter, metrics);
+        this.support = new WireTypeSupport(classifier, identityFormatter);
         this.compatibility = new NormalizedTypeCompatibility(
                 types, hierarchyResolver, classifier, identityFormatter);
-        this.normalizedFormatter = new NormalizedWireTypeFormatter(classifier);
-        this.carrierShapeClassifier = new CarrierShapeClassifier(classifier);
+        this.normalizedFormatter = new NormalizedWireTypeFormatter(
+                classifier, identityFormatter);
+        this.carrierShapeClassifier = new CarrierShapeClassifier(
+                classifier, identityFormatter);
     }
 
     public void beginRound() {
@@ -49,14 +53,14 @@ public final class ThriftTypeInspector {
     }
 
     public boolean isSupported(TypeMirror type) {
-        return classifier.isSupported(type);
+        return support.isSupported(type);
     }
 
     public boolean isSupported(TypeMirror type, ThriftAnnotationDialect dialect) {
         String key = cacheKey(type, dialect);
         Boolean cached = supportedCache.get(key);
         if (cached == null) {
-            cached = Boolean.valueOf(classifier.isSupported(type, dialect));
+            cached = Boolean.valueOf(support.isSupported(type, dialect));
             supportedCache.put(key, cached);
         }
         return cached.booleanValue();
@@ -68,13 +72,13 @@ public final class ThriftTypeInspector {
      * coerced scalar types (for example {@code int} and {@code Integer}) remain distinct.
      */
     public String normalizedType(TypeMirror type) {
-        return classifier.normalizedType(type);
+        return normalizedFormatter.format(type);
     }
 
     public String normalizedType(TypeMirror type, boolean preserveExactStructReference) {
         return preserveExactStructReference
                 ? identityFormatter.javaTypeIdentity(type, true)
-                : classifier.normalizedType(type);
+                : normalizedFormatter.format(type);
     }
 
     public String normalizedType(

@@ -11,14 +11,9 @@ import io.github.thriftannotationlint.internal.model.ThriftAnnotations;
 import io.github.thriftannotationlint.internal.types.ThriftTypeInspector;
 
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.IntersectionType;
-import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.TypeVariable;
-import javax.lang.model.type.WildcardType;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -64,12 +59,17 @@ public final class DemandClosure {
 
     private final ThriftTypeInspector typeInspector;
     private final SwiftModelClassifier modelClassifier;
+    private final TypeComplexityCalculator complexityCalculator =
+            new TypeComplexityCalculator();
+    private final ModelReferenceCollector referenceCollector;
 
     public DemandClosure(
             ThriftTypeInspector typeInspector,
             SwiftModelClassifier modelClassifier) {
         this.typeInspector = typeInspector;
         this.modelClassifier = modelClassifier;
+        this.referenceCollector = new ModelReferenceCollector(
+                typeInspector, modelClassifier);
     }
 
     public WorkQueue newQueue() {
@@ -87,7 +87,7 @@ public final class DemandClosure {
                 typeName,
                 new ExactInstance(
                         typeInspector.exactJavaTypeIdentity(type),
-                        typeComplexity(type)));
+                        complexityCalculator.measure(type)));
     }
 
     public Expansion expandAndSchedule(
@@ -120,30 +120,13 @@ public final class DemandClosure {
         String identity = typeInspector.exactJavaTypeIdentity(
                 modelReference.requestedType());
         String referencedName = referencedType.getQualifiedName().toString();
-        int targetComplexity = typeComplexity(modelReference.requestedType());
+        int targetComplexity = complexityCalculator.measure(modelReference.requestedType());
         List<ExactInstance> ancestorInstances = owner.path.instances(referencedName);
-        if (ancestorInstances != null) {
-            for (ExactInstance instance : ancestorInstances) {
-                if (instance.identity.equals(identity)) {
-                    // Swift's deferred cache closes an exact recursion without another instance.
-                    return new Expansion(null, null);
-                }
-            }
-            int growthSteps = consecutiveGrowthSteps(
-                    ancestorInstances, targetComplexity);
-            int transientCapacity = Math.max(
-                    1, referencedType.getTypeParameters().size());
-            if (growthSteps > transientCapacity) {
-                return new Expansion(null, Finding.error(
-                        DiagnosticCode.INVALID_RECURSIVE_FIELD,
-                        part.element(),
-                        "Recursive generic model '" + referencedName
-                                + "' keeps producing deeper exact type instances "
-                                + "after all type-parameter positions have been "
-                                + "traversed; " + owner.dialect().runtimeName()
-                                + "'s metadata cache cannot "
-                                + "converge."));
-            }
+        Finding growthFinding = validateGrowth(
+                owner, part, referencedType, identity, referencedName,
+                targetComplexity, ancestorInstances);
+        if (growthFinding != null || containsExactInstance(ancestorInstances, identity)) {
+            return new Expansion(null, growthFinding);
         }
 
         Element anchor = owner.diagnosticAnchor == null
@@ -163,6 +146,44 @@ public final class DemandClosure {
                 owner.forceRevalidation);
         schedule(demand, queue);
         return new Expansion(demand, null);
+    }
+
+    private Finding validateGrowth(
+            ModelDemand owner,
+            FieldPart part,
+            TypeElement referencedType,
+            String identity,
+            String referencedName,
+            int targetComplexity,
+            List<ExactInstance> ancestors) {
+        if (ancestors == null || containsExactInstance(ancestors, identity)) {
+            return null;
+        }
+        int growthSteps = consecutiveGrowthSteps(ancestors, targetComplexity);
+        int transientCapacity = Math.max(1, referencedType.getTypeParameters().size());
+        if (growthSteps <= transientCapacity) {
+            return null;
+        }
+        return Finding.error(
+                DiagnosticCode.INVALID_RECURSIVE_FIELD,
+                part.element(),
+                "Recursive generic model '" + referencedName
+                        + "' keeps producing deeper exact type instances "
+                        + "after all type-parameter positions have been "
+                        + "traversed; " + owner.dialect().runtimeName()
+                        + "'s metadata cache cannot converge.");
+    }
+
+    private boolean containsExactInstance(List<ExactInstance> ancestors, String identity) {
+        if (ancestors == null) {
+            return false;
+        }
+        for (ExactInstance instance : ancestors) {
+            if (instance.identity.equals(identity)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public ModelDemand scheduleRootReference(
@@ -228,6 +249,12 @@ public final class DemandClosure {
                         + "' declared with " + explicit.displayName() + ".");
     }
 
+    public List<ModelReference> references(
+            TypeMirror type,
+            ThriftAnnotationDialect dialect) {
+        return referenceCollector.collect(type, dialect);
+    }
+
     private int consecutiveGrowthSteps(
             List<ExactInstance> ancestors,
             int targetComplexity) {
@@ -242,157 +269,5 @@ public final class DemandClosure {
             nextComplexity = previousComplexity;
         }
         return steps;
-    }
-
-    private int typeComplexity(TypeMirror type) {
-        return typeComplexity(type, new LinkedHashSet<String>());
-    }
-
-    public List<ModelReference> references(
-            TypeMirror type,
-            ThriftAnnotationDialect dialect) {
-        List<ModelReference> references = new ArrayList<ModelReference>();
-        collectReferencedModelTypes(
-                type, dialect, references, new LinkedHashSet<String>());
-        return references;
-    }
-
-    private int typeComplexity(TypeMirror type, Set<String> visiting) {
-        if (type == null || type.getKind() == TypeKind.NONE) {
-            return 0;
-        }
-        String key = type.getKind() + ":" + type;
-        if (!visiting.add(key)) {
-            return 0;
-        }
-        try {
-            int complexity = 1;
-            if (type.getKind() == TypeKind.DECLARED) {
-                DeclaredType declared = (DeclaredType) type;
-                complexity += typeComplexity(declared.getEnclosingType(), visiting);
-                for (TypeMirror argument : declared.getTypeArguments()) {
-                    complexity += typeComplexity(argument, visiting);
-                }
-            }
-            else if (type.getKind() == TypeKind.ARRAY) {
-                complexity += typeComplexity(
-                        ((javax.lang.model.type.ArrayType) type).getComponentType(), visiting);
-            }
-            else if (type.getKind() == TypeKind.WILDCARD) {
-                WildcardType wildcard = (WildcardType) type;
-                complexity += typeComplexity(wildcard.getExtendsBound(), visiting);
-                complexity += typeComplexity(wildcard.getSuperBound(), visiting);
-            }
-            else if (type.getKind() == TypeKind.INTERSECTION) {
-                for (TypeMirror bound : ((IntersectionType) type).getBounds()) {
-                    complexity += typeComplexity(bound, visiting);
-                }
-            }
-            return complexity;
-        }
-        finally {
-            visiting.remove(key);
-        }
-    }
-
-    private void collectReferencedModelTypes(
-            TypeMirror type,
-            ThriftAnnotationDialect dialect,
-            List<ModelReference> references,
-            Set<String> visiting) {
-        if (type == null || type.getKind() == TypeKind.ERROR) {
-            return;
-        }
-        String visitKey = type.getKind() + ":" + type;
-        if (!visiting.add(visitKey)) {
-            return;
-        }
-        try {
-            if (type.getKind() == TypeKind.TYPEVAR) {
-                if (!typeInspector.isModelTypeVariable(type)) {
-                    TypeMirror bound = firstUpperBound(((TypeVariable) type).getUpperBound());
-                    if (!addModelReference(type, bound, references)) {
-                        collectReferencedModelTypes(bound, dialect, references, visiting);
-                    }
-                }
-                return;
-            }
-            if (type.getKind() == TypeKind.WILDCARD) {
-                WildcardType wildcard = (WildcardType) type;
-                TypeMirror bound = wildcard.getExtendsBound() == null
-                        ? wildcard.getSuperBound()
-                        : wildcard.getExtendsBound();
-                if (!addModelReference(type, firstUpperBound(bound), references)) {
-                    collectReferencedModelTypes(bound, dialect, references, visiting);
-                }
-                return;
-            }
-            if (type.getKind() == TypeKind.INTERSECTION) {
-                List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-                if (!bounds.isEmpty()) {
-                    collectReferencedModelTypes(bounds.get(0), dialect, references, visiting);
-                }
-                return;
-            }
-            if (type.getKind() != TypeKind.DECLARED) {
-                return;
-            }
-
-            DeclaredType declared = (DeclaredType) type;
-            Element element = declared.asElement();
-            TypeElement typeElement = element instanceof TypeElement
-                    ? (TypeElement) element
-                    : null;
-            if (typeElement != null && typeElement.getKind() == ElementKind.ENUM) {
-                references.add(new ModelReference(declared, declared));
-                return;
-            }
-            List<TypeMirror> nestedArguments =
-                    typeInspector.nestedWireTypeArguments(type, dialect);
-            if (!nestedArguments.isEmpty()) {
-                for (TypeMirror argument : nestedArguments) {
-                    collectReferencedModelTypes(argument, dialect, references, visiting);
-                }
-                return;
-            }
-            if (typeElement != null && modelClassifier.modelKind(typeElement) != null) {
-                references.add(new ModelReference(declared, declared));
-            }
-        }
-        finally {
-            visiting.remove(visitKey);
-        }
-    }
-
-    private boolean addModelReference(
-            TypeMirror requestedType,
-            TypeMirror modelView,
-            List<ModelReference> references) {
-        if (modelView == null || modelView.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
-        DeclaredType declared = (DeclaredType) modelView;
-        Element element = declared.asElement();
-        if (!(element instanceof TypeElement)) {
-            return false;
-        }
-        TypeElement typeElement = (TypeElement) element;
-        if (typeElement.getKind() != ElementKind.ENUM
-                && typeInspector.isContainerType(modelView)) {
-            return false;
-        }
-        if (modelClassifier.modelKind(typeElement) == null) {
-            return false;
-        }
-        references.add(new ModelReference(requestedType, declared));
-        return true;
-    }
-
-    private TypeMirror firstUpperBound(TypeMirror bound) {
-        if (bound != null && bound.getKind() == TypeKind.INTERSECTION) {
-            List<? extends TypeMirror> bounds = ((IntersectionType) bound).getBounds();
-            return bounds.isEmpty() ? null : bounds.get(0);
-        }
-        return bound;
     }
 }

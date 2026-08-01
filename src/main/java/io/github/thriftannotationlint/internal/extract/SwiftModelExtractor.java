@@ -37,6 +37,7 @@ public final class SwiftModelExtractor {
     private final SwiftUnionMetadataExtractor unionMetadataExtractor;
     private final SwiftEnumMetadataExtractor enumMetadataExtractor;
     private final SwiftMemberResolver memberResolver;
+    private final SwiftModelDeclarationValidator declarationValidator;
 
     public SwiftModelExtractor(
             ProcessingEnvironment processingEnvironment,
@@ -60,6 +61,8 @@ public final class SwiftModelExtractor {
         Types types = processingEnvironment.getTypeUtils();
 
         this.memberResolver = memberResolver;
+        this.declarationValidator = new SwiftModelDeclarationValidator(
+                elements, memberResolver);
         ThriftParameterNameResolver parameterNameResolver = new ThriftParameterNameResolver(
                 elements,
                 new ClasspathParameterNames(processingEnvironment));
@@ -94,8 +97,7 @@ public final class SwiftModelExtractor {
         boolean unresolvedSymbols = unresolvedSymbolInspector.hasUnresolvedSymbols(
                 type, declaredType, kind, dialect);
         List<Finding> findings = new ArrayList<Finding>();
-        validateModelDeclaration(type, kind, dialect, findings);
-        validateAnnotationDialect(type, kind, dialect, findings);
+        declarationValidator.validate(type, kind, dialect, findings);
 
         if (kind == SwiftModel.Kind.ENUM) {
             List<ExecutableElement> enumMethods = enumMetadataExtractor.extract(
@@ -119,7 +121,7 @@ public final class SwiftModelExtractor {
 
         AnnotationMirror modelAnnotation = ThriftAnnotations.find(
                 type, dialect.modelAnnotation(kind));
-        validateIdlAnnotations(type, modelAnnotation, findings);
+        declarationValidator.validateIdlAnnotations(type, modelAnnotation, findings);
 
         TypeElement builder = constructionExtractor.extractBuilder(
                 type, modelAnnotation, findings);
@@ -227,108 +229,6 @@ public final class SwiftModelExtractor {
                         Collections.<ExecutableElement>emptyList()),
                 findings,
                 unresolvedSymbols);
-    }
-
-    private void validateModelDeclaration(
-            TypeElement type,
-            SwiftModel.Kind kind,
-            ThriftAnnotationDialect dialect,
-            List<Finding> findings) {
-        if (!type.getModifiers().contains(Modifier.PUBLIC)) {
-            findings.add(Finding.error(
-                    DiagnosticCode.MODEL_DECLARATION,
-                    type,
-                    "Thrift model type '" + type.getQualifiedName() + "' must be public."));
-        }
-
-        int modelAnnotations = ThriftAnnotations.modelAnnotationCount(type);
-        if (modelAnnotations > 1) {
-            findings.add(Finding.error(
-                    DiagnosticCode.MODEL_DECLARATION,
-                    type,
-                    "Type '" + type.getQualifiedName()
-                            + "' must not declare more than one Thrift model annotation."));
-        }
-
-        if (kind == SwiftModel.Kind.ENUM) {
-            if (type.getKind() != ElementKind.ENUM) {
-                String annotation = ThriftAnnotations.has(
-                        type, dialect.thriftEnum())
-                        ? "@ThriftEnum"
-                        : "@ThriftEnumValue";
-                findings.add(Finding.error(
-                        DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
-                        type,
-                        annotation + " may only be used by a Java enum."));
-            }
-        }
-        else if (type.getKind() != ElementKind.CLASS
-                && !"RECORD".equals(type.getKind().name())) {
-            findings.add(Finding.error(
-                    DiagnosticCode.MODEL_DECLARATION,
-                    type,
-                    "@ThriftStruct and @ThriftUnion require a class or record declaration."));
-        }
-    }
-
-    private void validateAnnotationDialect(
-            TypeElement type,
-            SwiftModel.Kind kind,
-            ThriftAnnotationDialect dialect,
-            List<Finding> findings) {
-        boolean inheritedPlainEnumDialect = kind == SwiftModel.Kind.ENUM
-                && ThriftAnnotations.dialectFor(type, kind) == null;
-        List<Element> elementsToCheck = new ArrayList<Element>();
-        elementsToCheck.add(type);
-        elementsToCheck.addAll(memberResolver.allMembers(type));
-        for (Element element : elementsToCheck) {
-            for (AnnotationMirror annotation : element.getAnnotationMirrors()) {
-                Element annotationElement = annotation.getAnnotationType().asElement();
-                if (!(annotationElement instanceof TypeElement)) {
-                    continue;
-                }
-                String annotationName = ((TypeElement) annotationElement)
-                        .getQualifiedName().toString();
-                if (ThriftAnnotations.isSupportedAnnotation(annotationName)
-                        && !dialect.ownsAnnotation(annotationName)) {
-                    if (inheritedPlainEnumDialect
-                            && (annotationName.endsWith(".ThriftEnumValue")
-                            || annotationName.endsWith(".ThriftEnumUnknownValue"))) {
-                        // A plain Java enum may be reached and cached independently by both
-                        // runtimes. Each extractor consumes only its own enum metadata.
-                        continue;
-                    }
-                    findings.add(Finding.error(
-                            DiagnosticCode.MODEL_DECLARATION,
-                            element,
-                            annotation,
-                            null,
-                            "Thrift model '" + type.getQualifiedName() + "' uses "
-                                    + dialect.displayName() + " annotations and must not mix in '"
-                                    + annotationName + "'."));
-                }
-            }
-        }
-    }
-
-    private void validateIdlAnnotations(
-            TypeElement type,
-            AnnotationMirror annotation,
-            List<Finding> findings) {
-        if (annotation == null) {
-            return;
-        }
-        ThriftAnnotations.IdlAnnotations idl =
-                ThriftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
-        if (!idl.duplicateKeys().isEmpty()) {
-            findings.add(Finding.error(
-                    DiagnosticCode.CONFLICTING_IDL_ANNOTATIONS,
-                    type,
-                    annotation,
-                    idl.sourceValue(),
-                    "Thrift model '" + type.getQualifiedName()
-                            + "' declares duplicate IDL annotation keys " + idl.duplicateKeys() + "."));
-        }
     }
 
     public static final class ExtractionResult {

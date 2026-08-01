@@ -32,6 +32,7 @@ public final class SwiftMemberResolver {
     private final Elements elements;
     private final Types types;
     private final MemberResolutionMetrics metrics;
+    private final ExecutableTypeResolver executableTypeResolver;
     private final Map<String, List<? extends Element>> roundMembers =
             new LinkedHashMap<String, List<? extends Element>>();
     private final Map<String, List<TypeElement>> roundHierarchies =
@@ -50,6 +51,7 @@ public final class SwiftMemberResolver {
         this.elements = elements;
         this.types = types;
         this.metrics = metrics;
+        this.executableTypeResolver = new ExecutableTypeResolver(types);
     }
 
     public void beginRound() {
@@ -146,35 +148,11 @@ public final class SwiftMemberResolver {
     ResolvedExecutable resolveExecutable(
             DeclaredType root,
             ExecutableElement method) {
-        ExecutableType declared = (ExecutableType) method.asType();
-        TypeMirror resolved = resolveMemberType(root, method);
-        ExecutableType executable = resolved instanceof ExecutableType
-                ? (ExecutableType) resolved
-                : declared;
-        List<TypeMirror> parameterTypes = new ArrayList<TypeMirror>();
-        List<? extends TypeMirror> declaredParameters = declared.getParameterTypes();
-        List<? extends TypeMirror> resolvedParameters = executable.getParameterTypes();
-        for (int index = 0; index < resolvedParameters.size(); index++) {
-            TypeMirror declaredParameter = index < declaredParameters.size()
-                    ? declaredParameters.get(index)
-                    : resolvedParameters.get(index);
-            parameterTypes.add(restoreExecutableTypeVariables(
-                    method, declaredParameter, resolvedParameters.get(index)));
-        }
-        return new ResolvedExecutable(
-                restoreExecutableTypeVariables(
-                        method, declared.getReturnType(), executable.getReturnType()),
-                parameterTypes);
+        return executableTypeResolver.resolve(root, method);
     }
 
     TypeMirror resolveMemberType(DeclaredType root, Element member) {
-        try {
-            return types.asMemberOf(root, member);
-        }
-        catch (IllegalArgumentException ignored) {
-            // A malformed hierarchy already has a javac diagnostic; use the declared type.
-        }
-        return member.asType();
+        return executableTypeResolver.resolveMemberType(root, member);
     }
 
     boolean isPublicInstance(Element element) {
@@ -260,106 +238,6 @@ public final class SwiftMemberResolver {
         }
     }
 
-    private TypeMirror restoreExecutableTypeVariables(
-            ExecutableElement method,
-            TypeMirror declared,
-            TypeMirror resolved) {
-        if (declared == null || resolved == null) {
-            return resolved;
-        }
-        if (declared.getKind() == TypeKind.TYPEVAR
-                && isTypeParameterOf(method, (TypeVariable) declared)) {
-            return declared;
-        }
-        if (declared.getKind() == TypeKind.ARRAY
-                && resolved.getKind() == TypeKind.ARRAY) {
-            return types.getArrayType(restoreExecutableTypeVariables(
-                    method,
-                    ((ArrayType) declared).getComponentType(),
-                    ((ArrayType) resolved).getComponentType()));
-        }
-        if (declared.getKind() == TypeKind.WILDCARD
-                && resolved.getKind() == TypeKind.WILDCARD) {
-            WildcardType declaredWildcard = (WildcardType) declared;
-            WildcardType resolvedWildcard = (WildcardType) resolved;
-            TypeMirror extendsBound = declaredWildcard.getExtendsBound() == null
-                    ? null
-                    : restoreExecutableTypeVariables(
-                    method,
-                    declaredWildcard.getExtendsBound(),
-                    resolvedWildcard.getExtendsBound());
-            TypeMirror superBound = declaredWildcard.getSuperBound() == null
-                    ? null
-                    : restoreExecutableTypeVariables(
-                    method,
-                    declaredWildcard.getSuperBound(),
-                    resolvedWildcard.getSuperBound());
-            return types.getWildcardType(extendsBound, superBound);
-        }
-        if (declared.getKind() != TypeKind.DECLARED
-                || resolved.getKind() != TypeKind.DECLARED) {
-            return resolved;
-        }
-
-        DeclaredType declaredType = (DeclaredType) declared;
-        DeclaredType resolvedType = (DeclaredType) resolved;
-        List<? extends TypeMirror> declaredArguments = declaredType.getTypeArguments();
-        List<? extends TypeMirror> resolvedArguments = resolvedType.getTypeArguments();
-        if (declaredArguments.size() != resolvedArguments.size()) {
-            return resolved;
-        }
-        TypeMirror[] arguments = new TypeMirror[resolvedArguments.size()];
-        for (int index = 0; index < arguments.length; index++) {
-            arguments[index] = restoreExecutableTypeVariables(
-                    method, declaredArguments.get(index), resolvedArguments.get(index));
-        }
-        Element element = resolvedType.asElement();
-        if (!(element instanceof TypeElement)) {
-            return resolved;
-        }
-        TypeMirror restoredEnclosing = resolvedType.getEnclosingType();
-        TypeMirror declaredEnclosing = declaredType.getEnclosingType();
-        if (declaredEnclosing != null
-                && restoredEnclosing != null
-                && declaredEnclosing.getKind() == TypeKind.DECLARED
-                && restoredEnclosing.getKind() == TypeKind.DECLARED) {
-            restoredEnclosing = restoreExecutableTypeVariables(
-                    method,
-                    declaredEnclosing,
-                    restoredEnclosing);
-        }
-        if (restoredEnclosing != null
-                && restoredEnclosing.getKind() == TypeKind.DECLARED) {
-            try {
-                return types.getDeclaredType(
-                        (DeclaredType) restoredEnclosing,
-                        (TypeElement) element,
-                        arguments);
-            }
-            catch (IllegalArgumentException ignored) {
-                // Static nested types are reconstructed without an enclosing type below.
-            }
-        }
-        try {
-            return types.getDeclaredType((TypeElement) element, arguments);
-        }
-        catch (IllegalArgumentException ignored) {
-            return resolved;
-        }
-    }
-
-    private boolean isTypeParameterOf(
-            ExecutableElement executable,
-            TypeVariable type) {
-        Element parameter = type.asElement();
-        for (TypeParameterElement declared : executable.getTypeParameters()) {
-            if (declared.equals(parameter)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private boolean isPublicDeclaringType(Element member) {
         TypeElement owner = declaringType(member);
         return owner != null && owner.getModifiers().contains(Modifier.PUBLIC);
@@ -378,7 +256,7 @@ public final class SwiftMemberResolver {
         private final TypeMirror returnType;
         private final List<TypeMirror> parameterTypes;
 
-        private ResolvedExecutable(
+        ResolvedExecutable(
                 TypeMirror returnType,
                 List<TypeMirror> parameterTypes) {
             this.returnType = returnType;

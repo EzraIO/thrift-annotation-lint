@@ -72,8 +72,11 @@ generated hierarchies from consuming budget or suppressing later work.
 
 ## Exact generic demand closure
 
-`DemandClosure` owns candidate scheduling, model-reference traversal, generic
-ancestry, and expanding-cycle detection. `LinkedHashMap` and `LinkedHashSet` are
+`DemandClosure` owns candidate scheduling, generic ancestry, and expanding-cycle detection.
+`ModelReferenceCollector` owns wire-type reference traversal, while
+`TypeComplexityCalculator` owns the structural metric used by growth detection.
+`RoundPlanner` delegates current and historical candidate discovery to dedicated collectors and
+stable ordering to `RoundDemandOrdering`. `LinkedHashMap` and `LinkedHashSet` are
 used deliberately: replacing them with unordered collections can change which
 diagnostic is reported first or which recursive edge represents a cycle.
 `DemandPath` is a persistent parent-linked path: appending a demand shares all ancestors instead
@@ -91,10 +94,10 @@ the same compilation do not create duplicate diagnostics.
 
 - `TypeHierarchyResolver` resolves mirror-first hierarchy views, with an
   element fallback for incomplete javac symbols and generic substitution;
-- `WireTypeClassifier` and `DialectTypePolicy` apply shared classification precedence and
-  codec-specific capabilities;
-- `NormalizedWireTypeFormatter` and `CarrierShapeClassifier` separate wire identity from Java
-  wrapper compatibility;
+- `WireTypeClassifier` owns catalog lookup and shared classification precedence;
+- `WireTypeSupport` and `DialectTypePolicy` apply recursive support and codec capabilities;
+- `NormalizedWireTypeFormatter` and `CarrierShapeClassifier` own wire identity and Java wrapper
+  compatibility rather than forwarding those decisions back to the catalog;
 - `JavaTypeIdentityFormatter` creates the exact identity strings used by state
   and diagnostics; and
 - `NormalizedTypeCompatibility` checks supported and canonical codec shapes.
@@ -112,6 +115,9 @@ and are deferred; they are not guessed from source text.
 member resolution, parameter-name resolution, and construction, field, union,
 and enum extractors. It receives the current round's compilation type names as
 an explicit argument and has no mutable cross-round extraction context.
+Model declaration checks, builder type binding, executable generic restoration, and parameter
+field identity each have a dedicated package-private owner; their public extraction order remains
+coordinated by the existing facades.
 The planner and extractor share one member resolver, which caches hierarchy and `getAllMembers`
 results only for the active round.
 Type classification and supertype views have the same round-local lifetime and are cleared before
@@ -132,8 +138,9 @@ cross-dialect reference terminates that branch with `AW1001`.
 
 Classpath parameter names are obtained through `ClasspathParameterNames`,
 which bounds resource reads and cache weight. `JvmDescriptorEncoder` produces
-declaration descriptors, and the pure `ClassFileParameterNameParser` reads only
-the class-file structures needed to reproduce Paranamer 2.8. Local variable
+declaration descriptors. `ClassFileConstantPoolReader`, `MethodDescriptorParser`, and the bounded
+data reader isolate the binary-format mechanics used by `ClassFileParameterNameParser`, which
+reads only the class-file structures needed to reproduce Paranamer 2.8. Local variable
 slot widths, non-zero start positions, partial tables, annotation-name
 all-or-nothing behavior, and the deterministic `argN` fallback are Swift compatibility
 requirements. `MethodParameters` alone is not treated as name evidence. Drift parameter
@@ -143,7 +150,10 @@ fallback rules in `ThriftParameterNameResolver`.
 ## Validation and diagnostics
 
 `SwiftModelValidator` coordinates immutable logical-field resolution, ordered
-field rules, union rules, and deterministic Tarjan cycle validation. Primary
+field rules, union rules, and deterministic Tarjan cycle validation. Logical-field annotation,
+type, access-path, and ID rules have separate package-private owners while the coordinator retains
+their observable execution order. Model graph construction, iterative strongly connected
+components, and representative cycle selection are likewise separate components. Primary
 and no-LVT variants each resolve logical fields once. The primary result is
 retained only for the active round and reused by cycle validation. Two-pass ID
 inference, union discriminator checks, no-LVT relocation, same-location

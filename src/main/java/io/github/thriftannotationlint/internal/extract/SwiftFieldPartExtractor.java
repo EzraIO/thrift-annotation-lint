@@ -28,7 +28,7 @@ import java.util.Set;
 final class SwiftFieldPartExtractor {
     private final Elements elements;
     private final SwiftMemberResolver memberResolver;
-    private final ThriftParameterNameResolver parameterNameResolver;
+    private final SwiftParameterFieldExtractor parameterFieldExtractor;
 
     SwiftFieldPartExtractor(
             Elements elements,
@@ -36,7 +36,8 @@ final class SwiftFieldPartExtractor {
             ThriftParameterNameResolver parameterNameResolver) {
         this.elements = elements;
         this.memberResolver = memberResolver;
-        this.parameterNameResolver = parameterNameResolver;
+        this.parameterFieldExtractor = new SwiftParameterFieldExtractor(
+                elements, memberResolver, parameterNameResolver);
     }
 
     void addExecutableParameters(
@@ -46,16 +47,8 @@ final class SwiftFieldPartExtractor {
             List<FieldPart> parts,
             Set<String> roundCompilationTypes,
             List<Finding> findings) {
-        SwiftMemberResolver.ResolvedExecutable resolved =
-                memberResolver.resolveExecutable(root, executable);
-        addParameters(
-                FieldPart.Source.CONSTRUCTOR_PARAMETER,
-                executable,
-                resolved.parameterTypes(),
-                dialect,
-                parts,
-                roundCompilationTypes,
-                findings);
+        parameterFieldExtractor.addExecutableParameters(
+                root, executable, dialect, parts, roundCompilationTypes, findings);
     }
 
     void extractAnnotatedFields(
@@ -197,7 +190,7 @@ final class SwiftFieldPartExtractor {
                     dialect.thriftField()));
             if (parameterMode) {
                 validateParameterInjectionMethod(method, methodAnnotation, findings);
-                addParameters(
+                parameterFieldExtractor.addParameters(
                         FieldPart.Source.METHOD_PARAMETER,
                         method,
                         parameterTypes,
@@ -274,99 +267,4 @@ final class SwiftFieldPartExtractor {
         }
     }
 
-    private void addParameters(
-            FieldPart.Source source,
-            ExecutableElement executable,
-            List<? extends TypeMirror> parameterTypes,
-            ThriftAnnotationDialect dialect,
-            List<FieldPart> parts,
-            Set<String> roundCompilationTypes,
-            List<Finding> findings) {
-        List<String> annotationNames = parameterNameResolver.annotationNames(executable, dialect);
-        ThriftParameterNameResolver.Result parameterNames = annotationNames == null
-                ? parameterNameResolver.resolve(
-                        executable, dialect, roundCompilationTypes, findings)
-                : parameterNameResolver.annotationProvided(annotationNames);
-        if (!parameterNames.valid()) {
-            return;
-        }
-        for (int index = 0; index < executable.getParameters().size(); index++) {
-            VariableElement parameter = executable.getParameters().get(index);
-            ThriftFieldData field = ThriftFieldData.from(elements, parameter, dialect);
-            boolean stableIdentity = validateStableParameterIdentity(
-                    parameter,
-                    field,
-                    parameterNames,
-                    annotationNames != null,
-                    dialect,
-                    findings);
-            String extractedName = annotationNames == null
-                    ? parameterNames.names().get(index)
-                    : annotationNames.get(index);
-            String noLvtName = stableIdentity
-                    && annotationNames == null
-                    && parameterNames.noLvtNames() != null
-                    ? parameterNames.noLvtNames().get(index)
-                    : null;
-            parts.add(new FieldPart(
-                    source,
-                    parameter,
-                    executable,
-                    extractedName,
-                    parameterTypes.get(index),
-                    field,
-                    false,
-                    true,
-                    parameterNames.reliable() && stableIdentity,
-                    noLvtName,
-                    requiresIdBasedParameterMerge(
-                            stableIdentity,
-                            annotationNames,
-                            extractedName,
-                            parameterNames)));
-        }
-    }
-
-    private boolean requiresIdBasedParameterMerge(
-            boolean stableIdentity,
-            List<String> annotationNames,
-            String extractedName,
-            ThriftParameterNameResolver.Result parameterNames) {
-        if (!stableIdentity) {
-            return false;
-        }
-        if (annotationNames == null) {
-            return parameterNames.idBasedMerge();
-        }
-        // @Named preserves an empty value. A field ID can still reconcile that parameter.
-        return extractedName != null && extractedName.isEmpty();
-    }
-
-    private boolean validateStableParameterIdentity(
-            VariableElement parameter,
-            ThriftFieldData field,
-            ThriftParameterNameResolver.Result parameterNames,
-            boolean stableAnnotationNames,
-            ThriftAnnotationDialect dialect,
-            List<Finding> findings) {
-        if (field.id() != null
-                || field.explicitName() != null
-                || stableAnnotationNames) {
-            return true;
-        }
-        if (!parameterNames.requiresExplicitIdentity()) {
-            return true;
-        }
-        findings.add(Finding.error(
-                DiagnosticCode.INVALID_METHOD_OR_CONSTRUCTOR,
-                parameter,
-                field.annotation(),
-                null,
-                "Injection parameter '" + parameter.getSimpleName()
-                        + "' must declare an explicit @ThriftField ID/name or a stable "
-                        + "annotation-provided name because " + dialect.runtimeName()
-                        + "'s runtime parameter-name "
-                        + "lookup is not guaranteed for this declaration."));
-        return false;
-    }
 }

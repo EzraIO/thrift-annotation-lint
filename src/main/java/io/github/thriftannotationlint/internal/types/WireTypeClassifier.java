@@ -6,22 +6,16 @@ import io.github.thriftannotationlint.internal.model.ThriftAnnotationDialect;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.TypeVariable;
-import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
-/** Applies Facebook Swift's declaration-type classification order. */
+/** Applies the declaration-type classification order shared by supported Thrift codecs. */
 final class WireTypeClassifier {
     enum Kind {
         BOXED,
@@ -42,10 +36,7 @@ final class WireTypeClassifier {
         final DeclaredType view;
         final String typeName;
 
-        CatalogType(
-                Kind kind,
-                DeclaredType view,
-                String typeName) {
+        CatalogType(Kind kind, DeclaredType view, String typeName) {
             this.kind = kind;
             this.view = view;
             this.typeName = typeName;
@@ -93,36 +84,6 @@ final class WireTypeClassifier {
         hierarchyResolver.beginRound();
     }
 
-    boolean isSupported(TypeMirror type) {
-        return isSupported(
-                type, ThriftAnnotationDialect.FACEBOOK_SWIFT, new HashSet<String>());
-    }
-
-    boolean isSupported(TypeMirror type, ThriftAnnotationDialect dialect) {
-        return isSupported(type, dialect, new HashSet<String>());
-    }
-
-    /**
-     * Returns the Java type identity used by Swift's normalized {@code ThriftType}.
-     * Collection implementations intentionally collapse to their wire container interface, while
-     * coerced scalar types (for example {@code int} and {@code Integer}) remain distinct.
-     */
-    String normalizedType(TypeMirror type) {
-        return normalizedType(
-                type,
-                ThriftAnnotationDialect.FACEBOOK_SWIFT,
-                new HashSet<String>(),
-                false);
-    }
-
-    String normalizedType(TypeMirror type, ThriftAnnotationDialect dialect) {
-        return normalizedType(type, dialect, new HashSet<String>(), false);
-    }
-
-    String carrierShape(TypeMirror type, ThriftAnnotationDialect dialect) {
-        return carrierShape(type, dialect, new HashSet<String>());
-    }
-
     boolean isContainerType(TypeMirror type) {
         if (type == null || type.getKind() != TypeKind.DECLARED) {
             return false;
@@ -131,9 +92,8 @@ final class WireTypeClassifier {
     }
 
     /**
-     * Returns a resolved type that proves Swift will classify the source declaration as a
-     * container. javac can retain a stale root DeclaredType when a generated direct supertype is
-     * completed in a later round, so the element hierarchy is used as a bounded fallback.
+     * Returns a resolved type that proves the source declaration is classified as a container.
+     * The hierarchy fallback handles stale root mirrors completed in a later processing round.
      */
     TypeMirror containerClassificationType(TypeMirror candidate) {
         if (candidate == null || candidate.getKind() != TypeKind.DECLARED) {
@@ -170,9 +130,7 @@ final class WireTypeClassifier {
         return classify(declaredType, ThriftAnnotationDialect.FACEBOOK_SWIFT);
     }
 
-    CatalogType classify(
-            DeclaredType declaredType,
-            ThriftAnnotationDialect dialect) {
+    CatalogType classify(DeclaredType declaredType, ThriftAnnotationDialect dialect) {
         String cacheKey = dialect.name() + "\u0000"
                 + identityFormatter.exactJavaTypeIdentity(declaredType);
         CatalogType cached = roundClassifications.get(cacheKey);
@@ -196,6 +154,18 @@ final class WireTypeClassifier {
         }
         TypeElement typeElement = (TypeElement) declaredElement;
         String typeName = typeElement.getQualifiedName().toString();
+        CatalogType scalar = scalarType(declaredType, dialect, typeElement, typeName);
+        if (scalar != null) {
+            return scalar;
+        }
+        return hierarchyType(declaredType, dialect, typeElement, typeName);
+    }
+
+    private CatalogType scalarType(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect,
+            TypeElement typeElement,
+            String typeName) {
         if ("java.lang.Object".equals(typeName)) {
             return new CatalogType(Kind.UNKNOWN, null, typeName);
         }
@@ -205,27 +175,65 @@ final class WireTypeClassifier {
         if ("java.lang.String".equals(typeName)) {
             return new CatalogType(Kind.STRING, declaredType, typeName);
         }
-        if (dialectPolicy.supportsOptional(dialect)) {
-            if ("java.util.OptionalInt".equals(typeName)) {
-                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Integer");
-            }
-            if ("java.util.OptionalLong".equals(typeName)) {
-                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Long");
-            }
-            if ("java.util.OptionalDouble".equals(typeName)) {
-                return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Double");
-            }
+        CatalogType primitiveOptional = primitiveOptional(declaredType, dialect, typeName);
+        if (primitiveOptional != null) {
+            return primitiveOptional;
         }
-
-        // Keep this precedence aligned with ThriftCatalog.buildThriftTypeInternal().
-        DeclaredType view = hierarchyResolver.asSupertype(declaredType, byteBufferType);
-        if (view != null) {
-            return new CatalogType(Kind.BINARY, view, typeName);
+        DeclaredType binaryView = hierarchyResolver.asSupertype(declaredType, byteBufferType);
+        if (binaryView != null) {
+            return new CatalogType(Kind.BINARY, binaryView, typeName);
         }
         if (typeElement.getKind() == ElementKind.ENUM) {
             return new CatalogType(Kind.ENUM, declaredType, typeName);
         }
-        view = hierarchyResolver.asSupertype(declaredType, mapType);
+        return null;
+    }
+
+    private CatalogType primitiveOptional(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect,
+            String typeName) {
+        if (!dialectPolicy.supportsOptional(dialect)) {
+            return null;
+        }
+        if ("java.util.OptionalInt".equals(typeName)) {
+            return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Integer");
+        }
+        if ("java.util.OptionalLong".equals(typeName)) {
+            return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Long");
+        }
+        if ("java.util.OptionalDouble".equals(typeName)) {
+            return new CatalogType(Kind.OPTIONAL, declaredType, "java.lang.Double");
+        }
+        return null;
+    }
+
+    private CatalogType hierarchyType(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect,
+            TypeElement typeElement,
+            String typeName) {
+        CatalogType container = containerType(declaredType, dialect, typeName);
+        if (container != null) {
+            return container;
+        }
+        if (ThriftAnnotations.has(typeElement, dialect.thriftStruct())) {
+            return new CatalogType(Kind.STRUCT, declaredType, typeName);
+        }
+        if (ThriftAnnotations.has(typeElement, dialect.thriftUnion())) {
+            return new CatalogType(Kind.UNION, declaredType, typeName);
+        }
+        if (isForeignModel(typeElement, dialect)) {
+            return new CatalogType(Kind.STRUCT, declaredType, typeName);
+        }
+        return new CatalogType(Kind.UNKNOWN, null, typeName);
+    }
+
+    private CatalogType containerType(
+            DeclaredType declaredType,
+            ThriftAnnotationDialect dialect,
+            String typeName) {
+        DeclaredType view = hierarchyResolver.asSupertype(declaredType, mapType);
         if (view != null) {
             return new CatalogType(Kind.MAP, view, typeName);
         }
@@ -243,22 +251,18 @@ final class WireTypeClassifier {
                 return new CatalogType(Kind.OPTIONAL, view, typeName);
             }
         }
-        if (ThriftAnnotations.has(typeElement, dialect.thriftStruct())) {
-            return new CatalogType(Kind.STRUCT, declaredType, typeName);
-        }
-        if (ThriftAnnotations.has(typeElement, dialect.thriftUnion())) {
-            return new CatalogType(Kind.UNION, declaredType, typeName);
-        }
-        // Reference validation owns the clearer AW1001 dialect-conflict diagnostic. Classify an
-        // explicitly foreign model as a wire model here so it does not also produce AW4001.
+        return null;
+    }
+
+    private boolean isForeignModel(TypeElement typeElement, ThriftAnnotationDialect dialect) {
         for (ThriftAnnotationDialect other : ThriftAnnotationDialect.values()) {
             if (other != dialect
                     && (ThriftAnnotations.has(typeElement, other.thriftStruct())
                     || ThriftAnnotations.has(typeElement, other.thriftUnion()))) {
-                return new CatalogType(Kind.STRUCT, declaredType, typeName);
+                return true;
             }
         }
-        return new CatalogType(Kind.UNKNOWN, null, typeName);
+        return false;
     }
 
     TypeElement canonicalType(Kind kind) {
@@ -281,307 +285,8 @@ final class WireTypeClassifier {
         return listType;
     }
 
-    private boolean isSupported(
-            TypeMirror type,
-            ThriftAnnotationDialect dialect,
-            Set<String> visiting) {
-        if (type == null) {
-            return false;
-        }
-        if (type.getKind() == TypeKind.ERROR) {
-            // javac owns unresolved-symbol diagnostics; reporting AW4001 as well is noisy.
-            return true;
-        }
-        if (isSupportedPrimitive(type.getKind())) {
-            return true;
-        }
-        if (type.getKind() == TypeKind.ARRAY) {
-            return isSupportedArray((ArrayType) type);
-        }
-        if (type.getKind() == TypeKind.TYPEVAR) {
-            if (identityFormatter.isModelTypeVariable(type)) {
-                // A model type variable is resolved from the concrete struct Type at runtime.
-                // Concrete inherited/member views are resolved by Types.asMemberOf whenever javac
-                // exposes an instantiated model to the processor.
-                return true;
-            }
-            // A method or constructor type variable is not substituted from the model Type.
-            // Guava TypeToken uses its first upper bound as the raw type, so an unbounded variable
-            // resolves to Object (unsupported) while a supported explicit bound can be encoded.
-            TypeMirror upperBound = ((TypeVariable) type).getUpperBound();
-            return upperBound != null && isSupported(upperBound, dialect, visiting);
-        }
-        if (type.getKind() == TypeKind.WILDCARD) {
-            WildcardType wildcard = (WildcardType) type;
-            TypeMirror upperBound = wildcard.getExtendsBound();
-            return upperBound != null && isSupported(upperBound, dialect, visiting);
-        }
-        if (type.getKind() == TypeKind.INTERSECTION) {
-            List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return !bounds.isEmpty() && isSupported(bounds.get(0), dialect, visiting);
-        }
-        if (type.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
-
-        String visitKey = "SUPPORTED:" + type;
-        if (!visiting.add(visitKey)) {
-            return false;
-        }
-        try {
-            CatalogType catalogType = classify((DeclaredType) type, dialect);
-            if (catalogType.kind == Kind.BOXED
-                    || catalogType.kind == Kind.STRING
-                    || catalogType.kind == Kind.BINARY
-                    || catalogType.kind == Kind.ENUM
-                    || catalogType.kind == Kind.STRUCT
-                    || catalogType.kind == Kind.UNION) {
-                return true;
-            }
-            if (catalogType.kind == Kind.OPTIONAL) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                if (arguments.isEmpty()) {
-                    return !catalogType.typeName.startsWith("java.util.Optional");
-                }
-                return arguments.size() == 1
-                        && isSupported(arguments.get(0), dialect, visiting);
-            }
-            if (!isContainerKind(catalogType.kind)) {
-                // Custom ThriftCatalog coercions cannot be known safely at compile time.
-                return false;
-            }
-            List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-            int expectedArguments = catalogType.kind == Kind.MAP ? 2 : 1;
-            if (arguments.size() != expectedArguments) {
-                return false;
-            }
-            for (TypeMirror argument : arguments) {
-                if (!isSupported(argument, dialect, visiting)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        finally {
-            visiting.remove(visitKey);
-        }
-    }
-
-    private String normalizedType(
-            TypeMirror type,
-            ThriftAnnotationDialect dialect,
-            Set<String> visiting,
-            boolean preserveStructArguments) {
-        if (type == null) {
-            return null;
-        }
-        if (type.getKind() == TypeKind.ERROR) {
-            return "ERROR";
-        }
-        if (isSupportedPrimitive(type.getKind())) {
-            return type.getKind().name();
-        }
-        if (type.getKind() == TypeKind.ARRAY) {
-            ArrayType array = (ArrayType) type;
-            return isSupportedArray(array)
-                    ? array.getComponentType().getKind().name() + "[]"
-                    : null;
-        }
-        if (type.getKind() == TypeKind.TYPEVAR) {
-            if (identityFormatter.isModelTypeVariable(type)) {
-                // Distinct model type variables cannot be proven incompatible at declaration
-                // time. Their actual arguments are checked when javac exposes a concrete view.
-                return "DEFERRED_TYPE_VARIABLE";
-            }
-            TypeMirror upperBound = ((TypeVariable) type).getUpperBound();
-            TypeMirror rawUpperBound = firstUpperBound(upperBound);
-            if (preserveStructArguments && isAnnotatedStructType(rawUpperBound)) {
-                // Recursive struct references nested in containers retain the exact reflective
-                // Type, even though TypeToken uses the bound as its raw class.
-                return identityFormatter.typeVariableIdentity(type);
-            }
-            // Top-level values normalize to the Thrift type of TypeToken's first upper bound.
-            return rawUpperBound == null
-                    ? null
-                    : normalizedType(rawUpperBound, dialect, visiting, preserveStructArguments);
-        }
-        if (type.getKind() == TypeKind.WILDCARD) {
-            WildcardType wildcard = (WildcardType) type;
-            TypeMirror upperBound = wildcard.getExtendsBound();
-            if (preserveStructArguments && isAnnotatedStructType(upperBound)) {
-                return identityFormatter.javaTypeIdentity(wildcard, visiting, true);
-            }
-            return upperBound == null
-                    ? null
-                    : normalizedType(upperBound, dialect, visiting, preserveStructArguments);
-        }
-        if (type.getKind() == TypeKind.INTERSECTION) {
-            List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return bounds.isEmpty()
-                    ? null
-                    : normalizedType(bounds.get(0), dialect, visiting, preserveStructArguments);
-        }
-        if (type.getKind() != TypeKind.DECLARED) {
-            return null;
-        }
-
-        String visitKey = "NORMALIZED:" + preserveStructArguments + ":" + type;
-        if (!visiting.add(visitKey)) {
-            return null;
-        }
-        try {
-            DeclaredType declaredType = (DeclaredType) type;
-            CatalogType catalogType = classify(declaredType, dialect);
-            if (catalogType.kind == Kind.BOXED || catalogType.kind == Kind.STRING) {
-                return catalogType.typeName;
-            }
-            if (catalogType.kind == Kind.BINARY) {
-                return "BINARY:java.nio.ByteBuffer";
-            }
-            if (catalogType.kind == Kind.ENUM) {
-                return "ENUM:" + catalogType.typeName;
-            }
-            if (catalogType.kind == Kind.OPTIONAL) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                if (arguments.isEmpty()) {
-                    if ("java.lang.Integer".equals(catalogType.typeName)) {
-                        return "java.lang.Integer";
-                    }
-                    if ("java.lang.Long".equals(catalogType.typeName)) {
-                        return "java.lang.Long";
-                    }
-                    if ("java.lang.Double".equals(catalogType.typeName)) {
-                        return "java.lang.Double";
-                    }
-                    return null;
-                }
-                return arguments.size() == 1
-                        ? normalizedType(arguments.get(0), dialect, visiting, true)
-                        : null;
-            }
-            if (catalogType.kind == Kind.MAP) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                if (arguments.size() != 2) {
-                    return null;
-                }
-                String key = normalizedType(arguments.get(0), dialect, visiting, true);
-                String value = normalizedType(arguments.get(1), dialect, visiting, true);
-                return key == null || value == null ? null : "MAP<" + key + "," + value + ">";
-            }
-            if (catalogType.kind == Kind.SET || catalogType.kind == Kind.LIST) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                if (arguments.size() != 1) {
-                    return null;
-                }
-                String value = normalizedType(arguments.get(0), dialect, visiting, true);
-                if (value == null) {
-                    return null;
-                }
-                return (catalogType.kind == Kind.SET ? "SET<" : "LIST<") + value + ">";
-            }
-            if (catalogType.kind == Kind.STRUCT || catalogType.kind == Kind.UNION) {
-                List<? extends TypeMirror> arguments = declaredType.getTypeArguments();
-                if (arguments.isEmpty() || !preserveStructArguments) {
-                    return "STRUCT:" + catalogType.typeName;
-                }
-                List<String> normalizedArguments = new ArrayList<String>();
-                for (TypeMirror argument : arguments) {
-                    // Swift's recursive reference for a struct nested in a container retains the
-                    // exact Java parameterized Type. Do not collapse ArrayList<T> to List<T> here.
-                    normalizedArguments.add(identityFormatter.javaTypeIdentity(
-                            argument, visiting, true));
-                }
-                return "STRUCT:" + catalogType.typeName
-                        + "<" + join(normalizedArguments) + ">";
-            }
-            return null;
-        }
-        finally {
-            visiting.remove(visitKey);
-        }
-    }
-
-    private String carrierShape(
-            TypeMirror type,
-            ThriftAnnotationDialect dialect,
-            Set<String> visiting) {
-        if (type == null || type.getKind() == TypeKind.ERROR) {
-            return "DEFERRED";
-        }
-        if (type.getKind() == TypeKind.TYPEVAR) {
-            if (identityFormatter.isModelTypeVariable(type)) {
-                return "DEFERRED";
-            }
-            return carrierShape(((TypeVariable) type).getUpperBound(), dialect, visiting);
-        }
-        if (type.getKind() == TypeKind.WILDCARD) {
-            return carrierShape(((WildcardType) type).getExtendsBound(), dialect, visiting);
-        }
-        if (type.getKind() == TypeKind.INTERSECTION) {
-            List<? extends TypeMirror> bounds = ((IntersectionType) type).getBounds();
-            return bounds.isEmpty() ? "DEFERRED"
-                    : carrierShape(bounds.get(0), dialect, visiting);
-        }
-        if (type.getKind() != TypeKind.DECLARED) {
-            return "VALUE";
-        }
-        String visitKey = "CARRIER:" + dialect + ":" + type;
-        if (!visiting.add(visitKey)) {
-            return "DEFERRED";
-        }
-        try {
-            CatalogType catalogType = classify((DeclaredType) type, dialect);
-            if (catalogType.kind == Kind.OPTIONAL) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                if (arguments.size() == 1) {
-                    return "OPTIONAL<"
-                            + carrierShape(arguments.get(0), dialect, visiting) + ">";
-                }
-                return "OPTIONAL_PRIMITIVE:" + catalogType.typeName;
-            }
-            if (catalogType.kind == Kind.MAP) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                return arguments.size() == 2
-                        ? "MAP<" + carrierShape(arguments.get(0), dialect, visiting)
-                        + "," + carrierShape(arguments.get(1), dialect, visiting) + ">"
-                        : "VALUE";
-            }
-            if (catalogType.kind == Kind.SET || catalogType.kind == Kind.LIST) {
-                List<? extends TypeMirror> arguments = catalogType.view.getTypeArguments();
-                return arguments.size() == 1
-                        ? catalogType.kind.name() + "<"
-                        + carrierShape(arguments.get(0), dialect, visiting) + ">"
-                        : "VALUE";
-            }
-            return "VALUE";
-        }
-        finally {
-            visiting.remove(visitKey);
-        }
-    }
-
-    private boolean isContainerKind(Kind kind) {
+    boolean isContainerKind(Kind kind) {
         return kind == Kind.MAP || kind == Kind.SET || kind == Kind.LIST;
-    }
-
-    private boolean isSupportedArray(ArrayType array) {
-        TypeKind component = array.getComponentType().getKind();
-        return component == TypeKind.BOOLEAN
-                || component == TypeKind.BYTE
-                || component == TypeKind.SHORT
-                || component == TypeKind.INT
-                || component == TypeKind.LONG
-                || component == TypeKind.DOUBLE;
-    }
-
-    private boolean isSupportedPrimitive(TypeKind kind) {
-        return kind == TypeKind.BOOLEAN
-                || kind == TypeKind.BYTE
-                || kind == TypeKind.SHORT
-                || kind == TypeKind.INT
-                || kind == TypeKind.LONG
-                || kind == TypeKind.FLOAT
-                || kind == TypeKind.DOUBLE;
     }
 
     private boolean isSupportedBoxedType(String typeName) {
@@ -592,41 +297,5 @@ final class WireTypeClassifier {
                 || "java.lang.Long".equals(typeName)
                 || "java.lang.Float".equals(typeName)
                 || "java.lang.Double".equals(typeName);
-    }
-
-    private boolean isAnnotatedStructType(TypeMirror type) {
-        if (type == null || type.getKind() != TypeKind.DECLARED) {
-            return false;
-        }
-        Element element = ((DeclaredType) type).asElement();
-        if (!(element instanceof TypeElement)) {
-            return false;
-        }
-        for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
-            if (ThriftAnnotations.has(element, dialect.thriftStruct())
-                    || ThriftAnnotations.has(element, dialect.thriftUnion())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private TypeMirror firstUpperBound(TypeMirror bound) {
-        if (bound != null && bound.getKind() == TypeKind.INTERSECTION) {
-            List<? extends TypeMirror> bounds = ((IntersectionType) bound).getBounds();
-            return bounds.isEmpty() ? null : bounds.get(0);
-        }
-        return bound;
-    }
-
-    private String join(List<String> values) {
-        StringBuilder result = new StringBuilder();
-        for (String value : values) {
-            if (result.length() > 0) {
-                result.append(',');
-            }
-            result.append(value);
-        }
-        return result.toString();
     }
 }

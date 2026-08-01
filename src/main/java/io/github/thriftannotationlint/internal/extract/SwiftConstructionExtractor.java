@@ -25,74 +25,27 @@ import java.util.Set;
 
 /** Extracts Swift construction metadata for direct models and builder-backed models. */
 final class SwiftConstructionExtractor {
-    private final Elements elements;
     private final Types types;
     private final SwiftMemberResolver memberResolver;
     private final SwiftFieldPartExtractor fieldPartExtractor;
+    private final SwiftBuilderTypeResolver builderTypeResolver;
 
     SwiftConstructionExtractor(
             Elements elements,
             Types types,
             SwiftMemberResolver memberResolver,
             SwiftFieldPartExtractor fieldPartExtractor) {
-        this.elements = elements;
         this.types = types;
         this.memberResolver = memberResolver;
         this.fieldPartExtractor = fieldPartExtractor;
+        this.builderTypeResolver = new SwiftBuilderTypeResolver(elements, types);
     }
 
     TypeElement extractBuilder(
             TypeElement modelType,
             AnnotationMirror modelAnnotation,
             List<Finding> findings) {
-        if (modelAnnotation == null) {
-            return null;
-        }
-        TypeMirror builderType = ThriftAnnotations.classValue(elements, modelAnnotation, "builder");
-        if (ThriftAnnotations.isVoidClassValue(builderType)) {
-            return null;
-        }
-        Element builderElement = types.asElement(builderType);
-        if (!(builderElement instanceof TypeElement)) {
-            findings.add(Finding.error(
-                    DiagnosticCode.INVALID_BUILDER,
-                    modelType,
-                    "Builder for Thrift model '" + modelType.getQualifiedName()
-                            + "' cannot be resolved."));
-            return null;
-        }
-
-        TypeElement builder = (TypeElement) builderElement;
-        if ("java.lang.Void".contentEquals(builder.getQualifiedName())) {
-            findings.add(Finding.error(
-                    DiagnosticCode.INVALID_BUILDER,
-                    modelType,
-                    modelAnnotation,
-                    ThriftAnnotations.explicitValue(modelAnnotation, "builder"),
-                    "Builder for Thrift model '" + modelType.getQualifiedName()
-                            + "' is java.lang.Void; omit builder or use void.class for Swift's "
-                            + "no-builder sentinel."));
-            return null;
-        }
-        if (builder.getKind() != javax.lang.model.element.ElementKind.CLASS
-                || !builder.getModifiers().contains(Modifier.PUBLIC)) {
-            findings.add(Finding.error(
-                    DiagnosticCode.INVALID_BUILDER,
-                    builder,
-                    "Builder type '" + builder.getQualifiedName() + "' must be a public class."));
-        }
-
-        List<? extends TypeParameterElement> builderParameters = builder.getTypeParameters();
-        if (!builderParameters.isEmpty()
-                && builderParameters.size() != modelType.getTypeParameters().size()) {
-            findings.add(Finding.error(
-                    DiagnosticCode.INVALID_BUILDER,
-                    builder,
-                    "Generic builder '" + builder.getQualifiedName()
-                            + "' must declare the same number of type parameters as model '"
-                            + modelType.getQualifiedName() + "'."));
-        }
-        return builder;
+        return builderTypeResolver.extract(modelType, modelAnnotation, findings);
     }
 
     DeclaredType bindBuilderType(
@@ -100,34 +53,7 @@ final class SwiftConstructionExtractor {
             DeclaredType modelType,
             TypeElement builder,
             List<Finding> findings) {
-        if (builder == null) {
-            return null;
-        }
-        List<? extends TypeParameterElement> builderParameters = builder.getTypeParameters();
-        if (builderParameters.isEmpty()) {
-            return (DeclaredType) builder.asType();
-        }
-        List<? extends TypeMirror> modelArguments = modelType.getTypeArguments();
-        if (modelArguments.isEmpty()) {
-            findings.add(Finding.error(
-                    DiagnosticCode.INVALID_BUILDER,
-                    model,
-                    "Generic builder '" + builder.getQualifiedName()
-                            + "' requires a parameterized model type; raw model '"
-                            + model.getQualifiedName() + "' cannot bind its type parameters."));
-            return (DeclaredType) types.erasure(builder.asType());
-        }
-        if (builderParameters.size() != modelArguments.size()) {
-            return (DeclaredType) builder.asType();
-        }
-        try {
-            return types.getDeclaredType(
-                    builder,
-                    modelArguments.toArray(new TypeMirror[modelArguments.size()]));
-        }
-        catch (IllegalArgumentException ignored) {
-            return (DeclaredType) builder.asType();
-        }
+        return builderTypeResolver.bind(model, modelType, builder, findings);
     }
 
     void extractConstructors(

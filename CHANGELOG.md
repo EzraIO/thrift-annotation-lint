@@ -7,6 +7,22 @@ the project intends to use [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-01
+
+### Changed
+
+- Split validation, recursive-cycle analysis, type inspection, round planning,
+  metadata extraction, and class-file parsing into focused package-private
+  components without changing public APIs or observable diagnostics.
+- Preserved deterministic rule execution, collection order, round-local cache
+  lifetimes, generic traversal, exact-model budgeting, and iterative deep-graph
+  handling.
+
+### Added
+
+- Added architecture ownership checks and focused JVM method-descriptor tests;
+  the complete suite now contains 216 passing tests.
+
 ## [0.2.0] - 2026-07-30
 
 ### Changed

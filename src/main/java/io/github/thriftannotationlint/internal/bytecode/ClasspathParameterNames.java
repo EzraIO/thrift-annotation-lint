@@ -21,6 +21,12 @@ import java.util.Map;
 /** Loads and caches classpath metadata used by Swift's Paranamer integration. */
 public final class ClasspathParameterNames {
     private static final int MAX_CACHED_CLASSES = 128;
+    private static final long CLASS_LOOKUP_BASE_WEIGHT = 128L;
+    private static final long LOOKUP_RESULT_BASE_WEIGHT = 48L;
+    private static final long LIST_BASE_WEIGHT = 32L;
+    private static final long REFERENCE_WEIGHT = 8L;
+    private static final long STRING_BASE_WEIGHT = 40L;
+    private static final long UTF16_BYTES_PER_CHARACTER = 2L;
     private static final long MAX_CACHED_WEIGHT_BYTES = 4L * 1024L * 1024L;
 
     private final Filer filer;
@@ -178,12 +184,12 @@ public final class ClasspathParameterNames {
         }
 
         long estimatedWeight() {
-            long weight = 48;
+            long weight = LOOKUP_RESULT_BASE_WEIGHT;
             if (failure != null) {
                 weight += stringWeight(failure);
             }
             if (names != null) {
-                weight += 32 + 8L * names.size();
+                weight += LIST_BASE_WEIGHT + REFERENCE_WEIGHT * names.size();
                 for (String name : names) {
                     weight += stringWeight(name);
                 }
@@ -228,11 +234,14 @@ public final class ClasspathParameterNames {
             if (parsedClass != null) {
                 return parsedClass.estimatedWeight(binaryName);
             }
-            return 128 + stringWeight(binaryName) + stringWeight(failure);
+            return CLASS_LOOKUP_BASE_WEIGHT
+                    + stringWeight(binaryName) + stringWeight(failure);
         }
     }
 
     private static long stringWeight(String value) {
-        return value == null ? 0 : 40L + 2L * value.length();
+        return value == null
+                ? 0
+                : STRING_BASE_WEIGHT + UTF16_BYTES_PER_CHARACTER * value.length();
     }
 }

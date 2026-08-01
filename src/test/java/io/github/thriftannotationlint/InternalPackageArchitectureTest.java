@@ -103,6 +103,41 @@ class InternalPackageArchitectureTest {
                 "internal/types/NormalizedWireTypeFormatter.java")));
         assertTrue(Files.exists(MAIN_PACKAGE.resolve(
                 "internal/types/CarrierShapeClassifier.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/validation/LogicalFieldMetadataRules.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/validation/IterativeStronglyConnectedComponents.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/types/WireTypeSupport.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/planning/RoundCandidateCollector.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/planning/ModelReferenceCollector.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/ExecutableTypeResolver.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/SwiftModelDeclarationValidator.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/SwiftParameterFieldExtractor.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/SwiftBuilderTypeResolver.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/bytecode/ClassFileConstantPoolReader.java")));
+    }
+
+    @Test
+    void coreCoordinatorsRemainFocusedAfterResponsibilityExtraction()
+            throws IOException {
+        assertSourceAtMost("internal/validation/LogicalFieldValidator.java", 100);
+        assertSourceAtMost("internal/validation/RecursiveModelCycleValidator.java", 100);
+        assertSourceAtMost("internal/planning/RoundPlanner.java", 320);
+        assertSourceAtMost("internal/planning/DemandClosure.java", 320);
+        assertSourceAtMost("internal/types/WireTypeClassifier.java", 320);
+        assertSourceAtMost("internal/extract/SwiftMemberResolver.java", 320);
+        assertSourceAtMost("internal/extract/SwiftModelExtractor.java", 320);
+        assertSourceAtMost("internal/extract/SwiftFieldPartExtractor.java", 320);
+        assertSourceAtMost("internal/extract/SwiftConstructionExtractor.java", 320);
+        assertSourceAtMost("internal/bytecode/ClassFileParameterNameParser.java", 320);
     }
 
     @Test
@@ -127,5 +162,18 @@ class InternalPackageArchitectureTest {
 
     private static Set<String> packages(String... values) {
         return new LinkedHashSet<String>(Arrays.asList(values));
+    }
+
+    private void assertSourceAtMost(String relativePath, int maximumLines)
+            throws IOException {
+        Path source = MAIN_PACKAGE.resolve(relativePath);
+        long lines;
+        try (Stream<String> sourceLines = Files.lines(source, StandardCharsets.UTF_8)) {
+            lines = sourceLines.count();
+        }
+        assertTrue(
+                lines <= maximumLines,
+                source + " has " + lines + " lines; keep orchestration focused at or below "
+                        + maximumLines);
     }
 }
