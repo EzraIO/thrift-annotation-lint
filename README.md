@@ -28,30 +28,84 @@ to the offending source element.
 > compile-time safety extensions described below. Its rule and diagnostic
 > contracts may evolve before `1.0.0`.
 
-## See the failure at the source
+## See a production-shaped failure at the source
 
-This model compiles as ordinary Java, but two logical fields reuse the same
-Thrift field ID:
+The dangerous mistakes are rarely isolated in a two-field demo. They are more
+often introduced when a mature request model gains one more DTO or when a
+developer copies an existing annotation and forgets to change its field ID.
+Both changes below are valid Java and are easy to miss in a large review
+(imports are omitted and the classes would normally live in separate files):
 
 ```java
 @ThriftStruct
-public class DuplicateIds {
-    @ThriftField(7)
-    public String first;
+public class CreateOrderRequest {
+    @ThriftField(1)
+    public String requestId;
+
+    @ThriftField(2)
+    public long customerId;
+
+    @ThriftField(3)
+    public List<OrderLine> lines;
+
+    @ThriftField(4)
+    public Map<String, String> attributes;
 
     @ThriftField(7)
-    public String second;
+    public String promotionCode;
+
+    // Added during a checkout refactor. Address is an ordinary Java DTO,
+    // but it was never declared as a Thrift struct.
+    @ThriftField(8)
+    public Address shippingAddress;
+
+    // Copied from promotionCode. The name changed, but field ID 7 did not.
+    @ThriftField(7)
+    public FraudContext fraudContext;
+}
+
+// Missing @ThriftStruct and @ThriftField metadata.
+public class Address {
+    public String city;
+    public String street;
+    public String postalCode;
+}
+
+@ThriftStruct
+public class OrderLine {
+    @ThriftField(1)
+    public String sku;
+
+    @ThriftField(2)
+    public int quantity;
+}
+
+@ThriftStruct
+public class FraudContext {
+    @ThriftField(1)
+    public String deviceId;
 }
 ```
 
-Ordinary Java compilation accepts this class. Without an earlier check, the
-failure can surface only when Swift or Drift builds runtime metadata or a
-codec. ThriftAnnotationLint reports it at the second annotation:
+The compiler sees valid field types and valid annotation syntax; it does not
+know that `Address` has no Swift/Drift codec shape or that IDs form one schema
+across the entire class. Without an earlier check, either problem can surface
+only when Swift or Drift builds runtime metadata or initializes a codec.
+
+ThriftAnnotationLint points back to both declarations during the same build:
 
 ```text
-error: [AW2002] Thrift model 'example.DuplicateIds' uses field ID 7
-for different logical fields [first, second].
+error: [AW4001] Thrift model 'example.CreateOrderRequest' field
+'shippingAddress' uses unsupported Java type 'example.Address'.
+
+error: [AW2002] Thrift model 'example.CreateOrderRequest' uses field ID 7
+for different logical fields [promotionCode, fraudContext].
 ```
+
+The fixes are local and explicit: make `Address` a real Thrift model (and
+annotate its serialized members), and assign `fraudContext` a new, never-reused
+field ID. The value of the check is that neither mistake reaches packaging,
+codec initialization, or production traffic first.
 
 It also catches missing read/write paths, invalid constructors and builders,
 unsafe union definitions, incompatible Java types, undeclared recursive edges,
