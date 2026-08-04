@@ -6,9 +6,9 @@
 
     <groupId>io.github.ezraio</groupId>
     <artifactId>thrift-annotation-lint</artifactId>
-    <version>0.2.2</version>
+    <version>0.2.3</version>
     <name>ThriftAnnotationLint</name>
-    <description>Compile-time validation for Java models using Facebook Swift or Airlift Drift Thrift annotations.</description>
+    <description>Compile-time validation for Java models using Facebook Swift, Airlift Drift, or PrestoDB Drift annotations.</description>
     <url>https://github.com/EzraIO/thrift-annotation-lint</url>
 
     <licenses>
@@ -31,7 +31,7 @@
         <connection>scm:git:https://github.com/EzraIO/thrift-annotation-lint.git</connection>
         <developerConnection>scm:git:ssh://git@github.com/EzraIO/thrift-annotation-lint.git</developerConnection>
         <url>https://github.com/EzraIO/thrift-annotation-lint</url>
-        <tag>v0.2.2</tag>
+        <tag>v0.2.3</tag>
     </scm>
 
     <issueManagement>
@@ -48,6 +48,7 @@
         <swift.version>0.23.1</swift.version>
         <!-- Drift 1.18 is the newest release whose published artifacts retain Java 8 bytecode. -->
         <drift.version>1.18</drift.version>
+        <prestodb.drift.version>0.230</prestodb.drift.version>
         <junit.version>5.10.1</junit.version>
         <javax.inject.version>1</javax.inject.version>
         <slf4j.version>1.7.12</slf4j.version>
@@ -70,6 +71,12 @@
             <groupId>io.airlift.drift</groupId>
             <artifactId>drift-codec</artifactId>
             <version>${drift.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.facebook.airlift.drift</groupId>
+            <artifactId>drift-api</artifactId>
+            <version>${prestodb.drift.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>

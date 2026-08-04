@@ -135,8 +135,10 @@ non-enum source compilations.
 
 Unannotated enums inherit the referencing model's dialect. Drift requires exactly
 one valid `@ThriftEnumValue` method, while Swift permits zero or one. The same
-plain enum may therefore be validated independently for both dialects. Explicit
-cross-dialect struct, union, or enum references are rejected with `AW1001`.
+plain enum may therefore be validated independently for each referencing dialect.
+Explicit cross-dialect struct, union, or enum references are rejected with
+`AW1001`, including references that cross the Airlift and PrestoDB Drift
+annotation namespaces.
 
 Drift supports `Optional<T>`, `OptionalInt`, `OptionalLong`, and
 `OptionalDouble`; generic elements are validated recursively and normalized to

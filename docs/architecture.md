@@ -124,15 +124,17 @@ Type classification and supertype views have the same round-local lifetime and a
 historical roots are rebuilt.
 
 `ThriftAnnotationDialect` is the boundary between shared metadata validation and
-codec-specific annotation names. A model selects exactly one dialect (Facebook
-Swift or Airlift Drift); extraction never searches the other dialect after that
-selection, and mixed annotations fail before logical-field validation. This keeps
-the existing `SwiftModel` representation internal while preventing annotation
-families from being merged accidentally.
+codec-specific annotation names. A model selects exactly one annotation dialect:
+Facebook Swift, Airlift Drift, or PrestoDB Drift. The two Drift dialects share
+runtime rules through an explicit Drift capability but retain exact annotation
+packages, cache identities, and graph boundaries. Extraction never searches a
+different dialect after selection, and mixed annotations fail before logical-field
+validation. This keeps the existing `SwiftModel` representation internal while
+preventing annotation families from being merged accidentally.
 Demand, pending-round state, recursion vertices, and validation caches carry the
 selected dialect explicitly. User-visible identities remain exact Java type
 names, while internal cache keys combine dialect and exact identity so a plain
-enum reached from Swift and Drift cannot be incorrectly deduplicated. Explicit
+enum reached from multiple dialects cannot be incorrectly deduplicated. Explicit
 model annotations take precedence over inherited reference dialects, and a
 cross-dialect reference terminates that branch with `AW1001`.
 

@@ -68,7 +68,7 @@ final class SwiftEnumMetadataExtractor {
                             + "' must declare at most one @ThriftEnumValue method."));
         }
         else if (methods.isEmpty()
-                && dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+                && dialect.isDrift()) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
                     enumType,

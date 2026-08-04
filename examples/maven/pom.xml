@@ -15,7 +15,9 @@
         <maven.compiler.source>8</maven.compiler.source>
         <maven.compiler.target>8</maven.compiler.target>
         <swift.version>0.23.1</swift.version>
-        <thrift.annotation.lint.version>0.2.0</thrift.annotation.lint.version>
+        <drift.version>1.18</drift.version>
+        <prestodb.drift.version>0.230</prestodb.drift.version>
+        <thrift.annotation.lint.version>0.2.3</thrift.annotation.lint.version>
         <thrift.annotation.lint.mode>strict</thrift.annotation.lint.mode>
         <thrift.annotation.lint.maxExactModels>512</thrift.annotation.lint.maxExactModels>
         <demo.case>valid-models</demo.case>
@@ -26,6 +28,16 @@
             <groupId>com.facebook.swift</groupId>
             <artifactId>swift-annotations</artifactId>
             <version>${swift.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift.drift</groupId>
+            <artifactId>drift-api</artifactId>
+            <version>${drift.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.facebook.airlift.drift</groupId>
+            <artifactId>drift-api</artifactId>
+            <version>${prestodb.drift.version}</version>
         </dependency>
     </dependencies>
 

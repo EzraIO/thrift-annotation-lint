@@ -1,5 +1,8 @@
 # Pipe-delimited: case-id|kind|expected-code|max-exact-models
 valid-models|valid||512
+valid-airlift-drift|valid||512
+valid-prestodb-drift|valid||512
+mixed-drift-namespace|violation|AW1001|512
 invalid-model-declaration|violation|AW1001|512
 missing-field-id|violation|AW2001|512
 duplicate-field-id|violation|AW2002|512

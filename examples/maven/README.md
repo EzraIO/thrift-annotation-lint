@@ -19,7 +19,8 @@ sh examples/maven/run-demo.sh
 The script builds and installs the processor from the current checkout, then
 verifies all cases declared in cases.txt:
 
-- valid-models succeeds in strict mode without a ThriftAnnotationLint diagnostic;
+- valid-models, valid-airlift-drift, and valid-prestodb-drift succeed in strict
+  mode without a ThriftAnnotationLint diagnostic;
 - every regular model-rule case succeeds in warning mode and reports only its
   expected diagnostic code;
 - duplicate-field-id also demonstrates that strict mode fails;
@@ -44,6 +45,9 @@ lock full English wording, line numbers, or Maven's rendering format.
 | Case directory | Diagnostic | Expected behavior |
 | --- | --- | --- |
 | valid-models | none | Valid field, constructor, builder, union, enum, recursive, and nested-container models compile cleanly. |
+| valid-airlift-drift | none | Airlift Drift fields, `Optional`, and nested models compile cleanly. |
+| valid-prestodb-drift | none | The PrestoDB Drift annotation namespace compiles with the same Drift rules. |
+| mixed-drift-namespace | AW1001 | One model mixes Airlift and PrestoDB Drift annotation namespaces. |
 | invalid-model-declaration | AW1001 | A public type declares two model annotations. |
 | missing-field-id | AW2001 | A field has no resolvable Thrift ID. |
 | duplicate-field-id | AW2002 | Two logical fields reuse one ID. |

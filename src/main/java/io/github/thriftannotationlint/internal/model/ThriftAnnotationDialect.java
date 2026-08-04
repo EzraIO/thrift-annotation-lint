@@ -2,17 +2,24 @@ package io.github.thriftannotationlint.internal.model;
 
 /** Qualified annotation names and runtime-specific behavior for a supported Thrift codec. */
 public enum ThriftAnnotationDialect {
-    FACEBOOK_SWIFT("Facebook Swift", "Swift", "com.facebook.swift.codec"),
-    AIRLIFT_DRIFT("Airlift Drift", "Drift", "io.airlift.drift.annotations");
+    FACEBOOK_SWIFT("Facebook Swift", "Swift", "com.facebook.swift.codec", false),
+    AIRLIFT_DRIFT("Airlift Drift", "Drift", "io.airlift.drift.annotations", true),
+    PRESTODB_DRIFT("PrestoDB Drift", "Drift", "com.facebook.drift.annotations", true);
 
     private final String displayName;
     private final String runtimeName;
     private final String annotationPackage;
+    private final boolean drift;
 
-    ThriftAnnotationDialect(String displayName, String runtimeName, String annotationPackage) {
+    ThriftAnnotationDialect(
+            String displayName,
+            String runtimeName,
+            String annotationPackage,
+            boolean drift) {
         this.displayName = displayName;
         this.runtimeName = runtimeName;
         this.annotationPackage = annotationPackage;
+        this.drift = drift;
     }
 
     public String displayName() {
@@ -21,6 +28,10 @@ public enum ThriftAnnotationDialect {
 
     public String runtimeName() {
         return runtimeName;
+    }
+
+    public boolean isDrift() {
+        return drift;
     }
 
     public String thriftStruct() {
@@ -52,7 +63,7 @@ public enum ThriftAnnotationDialect {
     }
 
     public String thriftEnumUnknownValue() {
-        return this == AIRLIFT_DRIFT ? annotation("ThriftEnumUnknownValue") : null;
+        return isDrift() ? annotation("ThriftEnumUnknownValue") : null;
     }
 
     public String thriftIdlAnnotation() {

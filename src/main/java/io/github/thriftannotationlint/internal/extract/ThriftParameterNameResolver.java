@@ -50,7 +50,7 @@ final class ThriftParameterNameResolver {
 
         ClasspathParameterNames.LookupResult lookup = classpathParameterNames.find(executable);
         if (lookup.isInvalid()) {
-            if (dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+            if (dialect.isDrift()) {
                 // Drift 1.18 catches bytecode lookup failures and falls back to reflection names.
                 return new Result(
                         generalParameterNames(executable), true, true, null, true, true);
@@ -67,7 +67,7 @@ final class ThriftParameterNameResolver {
             return new Result(
                     lookup.names(), true, false, null, false, true);
         }
-        if (dialect == ThriftAnnotationDialect.AIRLIFT_DRIFT) {
+        if (dialect.isDrift()) {
             // ParameterNames falls back to reflection, which yields argN without -parameters.
             return new Result(
                     generalParameterNames(executable), true, true, null, true, true);

@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project intends to use [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.3] - 2026-08-05
+
+### Added
+
+- Added compile-time validation for the PrestoDB Drift
+  `com.facebook.drift.annotations.*` namespace, verified against `drift-api`
+  `0.230`.
+- Added runnable Airlift Drift, PrestoDB Drift, and mixed-namespace Maven demo
+  cases.
+
+### Changed
+
+- Kept Airlift and PrestoDB Drift as distinct annotation dialects while sharing
+  Drift-specific validation behavior; mixed annotations and cross-namespace
+  model references now report `AW1001`.
 
 ## [0.2.2] - 2026-08-01
 
