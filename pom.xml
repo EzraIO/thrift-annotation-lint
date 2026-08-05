@@ -50,7 +50,7 @@
         <drift.version>1.18</drift.version>
         <prestodb.drift.version>0.230</prestodb.drift.version>
         <lombok.version>1.18.46</lombok.version>
-        <junit.version>5.10.1</junit.version>
+        <junit.version>6.1.2</junit.version>
         <javax.inject.version>1</javax.inject.version>
         <slf4j.version>1.7.12</slf4j.version>
     </properties>
