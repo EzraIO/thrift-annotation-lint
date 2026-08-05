@@ -90,6 +90,15 @@ final class SwiftModelDeclarationValidator {
             ThriftAnnotationDialect dialect,
             List<Finding> findings) {
         if (type.getKind() == ElementKind.ENUM) {
+            if (dialect.runtime().enumPolicy().requiresModelAnnotation()
+                    && !ThriftAnnotations.has(type, dialect.thriftEnum())) {
+                findings.add(Finding.error(
+                        DiagnosticCode.MODEL_DECLARATION,
+                        type,
+                        dialect.runtimeName() + " enum '" + type.getQualifiedName()
+                                + "' must declare @ThriftEnum from '"
+                                + dialect.thriftEnum() + "'."));
+            }
             return;
         }
         String annotation = ThriftAnnotations.has(type, dialect.thriftEnum())

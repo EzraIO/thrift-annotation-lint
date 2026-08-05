@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.github.thriftannotationlint.CompilerTestSupport.compile;
 import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspath;
+import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspathWithMethodParametersOnly;
 import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspathWithoutDebug;
 import static io.github.thriftannotationlint.CompilerTestSupport.source;
 
@@ -142,6 +143,64 @@ final class DriftCompatibilityTest {
     }
 
     @Test
+    void prefersMethodParametersForDriftClasspathModels() {
+        CompilerTestSupport.CompilationResult result =
+                compileAgainstClasspathWithMethodParametersOnly(
+                        new CompilerTestSupport.Source[]{source("dependency.ParametersOnlyDrift",
+                                "package dependency;",
+                                "import io.airlift.drift.annotations.*;",
+                                "@ThriftStruct",
+                                "public class ParametersOnlyDrift {",
+                                "  @ThriftConstructor",
+                                "  public ParametersOnlyDrift(@ThriftField String value) {}",
+                                "  @ThriftField(1) public String getValue() { return \"\"; }",
+                                "}")},
+                        source("example.ParametersOnlyDriftRoot",
+                                "package example;",
+                                "import io.airlift.drift.annotations.*;",
+                                "@ThriftStruct public class ParametersOnlyDriftRoot {",
+                                "  @ThriftField(1)",
+                                "  public dependency.ParametersOnlyDrift value;",
+                                "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+    }
+
+    @Test
+    void recognizesTheDriftRecursiveReferenceIdlKey() {
+        CompilerTestSupport.CompilationResult result = compile(source("example.DriftRecursiveNode",
+                "package example;",
+                "import io.airlift.drift.annotations.*;",
+                "import static io.airlift.drift.annotations.ThriftField.Requiredness.OPTIONAL;",
+                "@ThriftStruct public class DriftRecursiveNode {",
+                "  @ThriftField(value=1, requiredness=OPTIONAL,",
+                "      idlAnnotations=@ThriftIdlAnnotation(",
+                "          key=\"drift.recursive_reference\", value=\"true\"))",
+                "  public DriftRecursiveNode next;",
+                "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+    }
+
+    @Test
+    void doesNotGiveSwiftRecursiveKeySemanticsToDriftModels() {
+        CompilerTestSupport.CompilationResult result = compile(source("example.BadDriftRecursiveNode",
+                "package example;",
+                "import io.airlift.drift.annotations.*;",
+                "import static io.airlift.drift.annotations.ThriftField.Requiredness.OPTIONAL;",
+                "@ThriftStruct public class BadDriftRecursiveNode {",
+                "  @ThriftField(value=1, requiredness=OPTIONAL,",
+                "      idlAnnotations=@ThriftIdlAnnotation(",
+                "          key=\"swift.recursive_reference\", value=\"true\"))",
+                "  public BadDriftRecursiveNode next;",
+                "}"));
+
+        result.assertFailedWith("AW4003");
+    }
+
+    @Test
     void acceptsOneDriftUnknownEnumFallback() {
         CompilerTestSupport.CompilationResult result = compile(source("example.ForwardCompatibleState",
                 "package example;",
@@ -163,9 +222,10 @@ final class DriftCompatibilityTest {
         CompilerTestSupport.CompilationResult result = compile(source("example.AmbiguousUnknownState",
                 "package example;",
                 "import io.airlift.drift.annotations.*;",
-                "public enum AmbiguousUnknownState {",
+                "@ThriftEnum public enum AmbiguousUnknownState {",
                 "  @ThriftEnumUnknownValue FIRST,",
                 "  @ThriftEnumUnknownValue SECOND;",
+                "  @ThriftEnumValue public int value() { return ordinal(); }",
                 "}"));
 
         result.assertFailedWith("AW6002");
@@ -291,7 +351,7 @@ final class DriftCompatibilityTest {
     }
 
     @Test
-    void plainEnumInheritsTheReferencingDriftDialect() {
+    void rejectsPlainEnumReferencedByDriftModel() {
         CompilerTestSupport.CompilationResult result = compile(
                 source("example.PlainState",
                         "package example;",
@@ -304,11 +364,14 @@ final class DriftCompatibilityTest {
                         "  public PlainState state;",
                         "}"));
 
-        result.assertFailedWith("AW6001");
+        result.assertFailedWith("AW1001");
+        org.junit.jupiter.api.Assertions.assertTrue(
+                result.diagnosticSummary().contains("must declare @ThriftEnum"),
+                result.diagnosticSummary());
     }
 
     @Test
-    void validatesOnePlainEnumIndependentlyForBothDialects() {
+    void rejectsPlainEnumForDriftEvenWhenSwiftCanUseIt() {
         CompilerTestSupport.CompilationResult result = compile(
                 source("example.SharedState",
                         "package example;",
@@ -330,8 +393,7 @@ final class DriftCompatibilityTest {
                         "  @io.airlift.drift.annotations.ThriftField(1) public SharedState state;",
                         "}"));
 
-        result.assertSucceeded();
-        result.assertNoThriftAnnotationLintDiagnostics();
+        result.assertFailedWith("AW1001");
     }
 
     @Test
@@ -346,6 +408,6 @@ final class DriftCompatibilityTest {
                 "  public String driftValue() { return name(); }",
                 "}"));
 
-        result.assertFailedWith("AW6001");
+        result.assertFailedWith("AW1001");
     }
 }

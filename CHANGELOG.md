@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 the project intends to use [Semantic Versioning](https://semver.org/).
 
+## [0.2.4] - 2026-08-05
+
+### Changed
+
+- Aligned Drift validation with the official runtime contracts: recursive IDL
+  annotations use `drift.recursive_reference`, Drift enums require the matching
+  `@ThriftEnum`, and classpath parameter lookup now prefers complete
+  `MethodParameters` metadata before `LocalVariableTable`.
+- Kept Facebook Swift's distinct Paranamer-compatible classpath lookup intact:
+  it continues to ignore `MethodParameters` and to use its existing LVT and
+  deterministic `argN` fallback behavior.
+- Reworked the internal dialect boundary into explicit runtime policies and
+  separated the class-file metadata views, preserving public APIs and
+  diagnostic contracts while making the supported runtime differences local and
+  auditable.
+
+### Added
+
+- Added source-level Lombok accessor guidance and checks: generated public
+  accessors carrying `@ThriftField` are supported, while private annotated
+  fields remain rejected because the official reflection-based runtimes reject
+  them too.
+- Added runtime-parity and bytecode regression coverage for the Swift/Drift
+  differences, official annotation runtimes, Lombok accessor models, and
+  `MethodParameters`/LVT precedence.
+
 ## [0.2.3] - 2026-08-05
 
 ### Added

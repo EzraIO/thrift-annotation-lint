@@ -87,17 +87,16 @@ later generated-source round so generated symbols are validated in their
 completed form, including javac placeholders whose use-site kind never changed
 to `ERROR`.
 
-Classpath constructor and multi-parameter injection names are trusted only when
-present in `LocalVariableTable`, matching the Paranamer bytecode lookup used by
-the supported official Swift releases. `MethodParameters` alone is not enough.
-When LVT data is unavailable, ThriftAnnotationLint uses the same deterministic `argN`
-fallback as GeneralParanamer and includes those names in both ID-inference
-passes. Source injection parameters are checked with both source/LVT and
-no-LVT names because JSR 269 cannot guarantee which debug attributes the
-eventual class file will retain. Source and no-LVT classpath parameters must
-still provide an explicit `@ThriftField` ID/name or a stable annotation name.
-Annotation-provided names follow ThriftFieldParanamer's all-parameters behavior
-and annotation order, including JSR-330 `@Named`.
+Swift classpath constructor and multi-parameter injection names are trusted only
+when present in `LocalVariableTable`, matching Paranamer; `MethodParameters` alone
+is intentionally ignored. Drift first uses complete `MethodParameters` emitted by
+`javac -parameters`, otherwise reads parameter slots from `LocalVariableTable`,
+and finally uses reflection's `argN` fallback. The parser retains both views so a
+Drift model cannot change Swift lookup behavior. Source injection parameters are
+checked against their possible runtime fallback because JSR 269 cannot guarantee
+which attributes the eventual class file will retain. Parameters without stable
+metadata must provide an explicit `@ThriftField` ID/name or a complete annotation
+name. JSR-330 `@Named` participates only in Swift's ThriftFieldParanamer chain.
 
 Class bytes for dependency methods must be visible through the annotation
 processor `CLASS_PATH`. Module-path-only model dependencies fail closed with
@@ -110,6 +109,21 @@ source roots are exempt. Only fully resolved declarations that remain models
 after Swift's container classification consume the budget. `AW9003` is always
 an error because validation did not finish; increase the limit only after
 confirming that the graph is finite.
+
+## Lombok accessors
+
+`AW3004` intentionally rejects a supported Swift or Drift `@ThriftField` on a private field
+even when Lombok generates public accessors. Facebook Swift, Airlift Drift, and PrestoDB Drift
+all scan the annotated private field as invalid runtime metadata; the generated methods do not
+hide it. For a Lombok-backed annotation model, leave the private field unannotated and use
+field-level
+`@Getter(onMethod_ = @ThriftField(...))` and
+`@Setter(onMethod_ = @ThriftField)` declarations so Lombok places the metadata on the
+generated public methods. Plain type-level `@Data` cannot supply per-field Thrift IDs.
+
+Apache Thrift compiler-generated `TBase` classes are different: their generated codec code may
+use private storage without reflecting over Swift or Drift annotations. `AW3004` does not apply
+to those generated fields merely because they are private.
 
 ## Deliberately stricter rules
 
@@ -133,12 +147,12 @@ enum can inherit `@ThriftEnumValue` from a classpath interface. The processor
 does not claim unrelated annotations and takes a fast no-op path for ordinary
 non-enum source compilations.
 
-Unannotated enums inherit the referencing model's dialect. Drift requires exactly
-one valid `@ThriftEnumValue` method, while Swift permits zero or one. The same
-plain enum may therefore be validated independently for each referencing dialect.
-Explicit cross-dialect struct, union, or enum references are rejected with
-`AW1001`, including references that cross the Airlift and PrestoDB Drift
-annotation namespaces.
+Swift permits an unannotated Java enum and zero or one valid `@ThriftEnumValue`
+method. Drift requires the enum class to declare the matching namespace's
+`@ThriftEnum` and exactly one valid value method. A plain enum referenced by a
+Drift model is therefore `AW1001`. Explicit cross-dialect struct, union, or enum
+references are also rejected with `AW1001`, including references that cross the
+Airlift and PrestoDB Drift annotation namespaces.
 
 Drift supports `Optional<T>`, `OptionalInt`, `OptionalLong`, and
 `OptionalDouble`; generic elements are validated recursively and normalized to

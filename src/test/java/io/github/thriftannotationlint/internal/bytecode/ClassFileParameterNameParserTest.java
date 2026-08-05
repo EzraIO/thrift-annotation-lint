@@ -27,21 +27,21 @@ class ClassFileParameterNameParserTest {
             ClassFileParameterNameParser.ParsedClass parsed =
                     new ClassFileParameterNameParser().parse(input);
 
-            ClassFileParameterNameParser.MethodLookup instance = parsed.find(
+            ParameterNameLookup instance = parsed.find(
                     "instance\u0000(J[Ljava/lang/String;DI)");
             assertTrue(instance.isFound());
             assertEquals(
                     Arrays.asList("wide", "values", "fraction", "count"),
                     instance.names());
 
-            ClassFileParameterNameParser.MethodLookup staticMethod = parsed.find(
+            ParameterNameLookup staticMethod = parsed.find(
                     "staticCall\u0000(JD[Ljava/lang/Object;)");
             assertTrue(staticMethod.isFound());
             assertEquals(
                     Arrays.asList("first", "second", "third"),
                     staticMethod.names());
 
-            ClassFileParameterNameParser.MethodLookup constructor =
+            ParameterNameLookup constructor =
                     parsed.find("<init>\u0000()");
             assertTrue(constructor.isFound());
             assertEquals(Collections.emptyList(), constructor.names());
@@ -54,25 +54,25 @@ class ClassFileParameterNameParserTest {
 
     @Test
     void reproducesParanamerPartialOverCompleteAndArgFallbackSemantics() {
-        ClassFileParameterNameParser.MethodLookup partial =
+        ParameterNameLookup partial =
                 ClassFileParameterNameParser.classifyLocalVariableNames(
                         Collections.singletonList("left"), 2);
         assertTrue(partial.isInvalid());
         assertTrue(partial.failure().contains("only 1 of 2"));
 
-        ClassFileParameterNameParser.MethodLookup overComplete =
+        ParameterNameLookup overComplete =
                 ClassFileParameterNameParser.classifyLocalVariableNames(
                         Arrays.asList("left", "right", "wovenAlias"), 2);
         assertTrue(overComplete.isFound());
         assertEquals(Arrays.asList("left", "right"), overComplete.names());
 
-        ClassFileParameterNameParser.MethodLookup generatedNames =
+        ParameterNameLookup generatedNames =
                 ClassFileParameterNameParser.classifyLocalVariableNames(
                         Arrays.asList("arg0", "arg1"), 2);
         assertFalse(generatedNames.isFound());
         assertFalse(generatedNames.isInvalid());
 
-        ClassFileParameterNameParser.MethodLookup noParameters =
+        ParameterNameLookup noParameters =
                 ClassFileParameterNameParser.classifyLocalVariableNames(
                         Collections.singletonList("wovenAlias"), 0);
         assertTrue(noParameters.isFound());
@@ -85,7 +85,7 @@ class ClassFileParameterNameParserTest {
                 new ClassFileParameterNameParser().parse(
                         new ByteArrayInputStream(classWithTwoLocalVariableTables()));
 
-        ClassFileParameterNameParser.MethodLookup lookup = parsed.find("call\u0000(II)");
+        ParameterNameLookup lookup = parsed.find("call\u0000(II)");
         assertTrue(lookup.isFound());
         assertEquals(Arrays.asList("left", "right"), lookup.names());
     }

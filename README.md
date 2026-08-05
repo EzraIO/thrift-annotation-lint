@@ -23,7 +23,7 @@ to the offending source element.
 - **Use a verified dialect:** Facebook Swift, Airlift Drift, and the legacy
   PrestoDB Drift annotation namespace are covered.
 
-> **Project status:** `0.2.3` is the latest published preview. The processor is verified
+> **Project status:** `0.2.4` is the latest published preview. The processor is verified
 > against the public Facebook Swift `0.19.2`, `0.20.0`, `0.21.1`, `0.22.1`, and
 > `0.23.1` contracts, the Airlift Drift `1.18` annotation contract, and the
 > PrestoDB Drift `0.230` annotation contract, plus deliberate compile-time safety
@@ -157,8 +157,8 @@ so codec round-trip tests still complement these checks. See
 
 ## Quick start
 
-Version `0.2.3` is published on
-[Maven Central](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint/0.2.3).
+Version `0.2.4` is published on
+[Maven Central](https://central.sonatype.com/artifact/io.github.ezraio/thrift-annotation-lint/0.2.4).
 For an established codebase, begin with `warning` mode and switch to `strict`
 after reviewing the findings.
 
@@ -192,7 +192,7 @@ after reviewing the findings.
                     <path>
                         <groupId>io.github.ezraio</groupId>
                         <artifactId>thrift-annotation-lint</artifactId>
-                        <version>0.2.3</version>
+                        <version>0.2.4</version>
                     </path>
                 </annotationProcessorPaths>
                 <compilerArgs>
@@ -216,7 +216,7 @@ dependencies {
     compileOnly "com.facebook.swift:swift-annotations:0.23.1"
     // Or this for Airlift Drift models:
     // compileOnly "io.airlift.drift:drift-api:1.18"
-    annotationProcessor "io.github.ezraio:thrift-annotation-lint:0.2.3"
+    annotationProcessor "io.github.ezraio:thrift-annotation-lint:0.2.4"
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -265,12 +265,36 @@ requiredness, read/write paths, signatures, and recursively nested Java types.
 Java records are supported when the application compiler supports them and the
 record exposes annotated constructor and accessor paths.
 
-Lombok-generated members are handled only when the generated method actually
-carries `@ThriftField` and is visible to ThriftAnnotationLint during annotation processing.
-Plain `@Data`, `@Getter`, or `@Setter` does not create Swift metadata, so ThriftAnnotationLint
-does not guess an injection path from those annotations. If processors are
-listed explicitly, run Lombok before ThriftAnnotationLint and keep a runtime codec test for
-the generated model.
+Lombok-generated accessors are supported when the generated methods actually carry
+`@ThriftField` and Lombok runs before ThriftAnnotationLint. A private field must not itself
+carry a Swift or Drift `@ThriftField`: those reflection-based codecs reject annotated private
+fields even when public Lombok accessors also exist. Put the Thrift metadata on the generated
+getter and setter instead:
+
+```java
+@Data
+@ThriftStruct
+public class Customer {
+    @Getter(onMethod_ = @ThriftField(1))
+    @Setter(onMethod_ = @ThriftField)
+    private String email;
+}
+```
+
+The explicit ID is needed on only one accessor because the codecs merge getter and setter
+metadata by the extracted field name. Plain `@Data`, `@Getter`, or `@Setter` does not create
+Thrift metadata, so ThriftAnnotationLint does not guess an injection path. When annotation
+processors are listed explicitly, put Lombok before ThriftAnnotationLint, and retain a runtime
+codec test for generated models. Lombok's
+[`onMethod_`](https://projectlombok.org/features/experimental/onX) facility is experimental,
+so projects that prefer to avoid it should declare ordinary annotated public getter and setter
+methods.
+
+This restriction does not apply to ordinary private storage in Apache Thrift-generated Java
+classes. Apache Thrift generates `TBase` serialization code and can generate private members;
+it does not discover those fields through Swift or Drift `@ThriftField` reflection. Such
+generated classes are outside this annotation processor's scope unless application code also
+models them with one of the supported Swift or Drift annotation dialects.
 
 The preview does **not** validate:
 
@@ -388,11 +412,12 @@ its reachable annotated model graph must use `io.airlift.drift.annotations.*` or
 mixing either one with `com.facebook.swift.codec.*`—is rejected with `AW1001`.
 Drift model discovery, fields, constructors, builders, unions, enums, IDL
 annotations, and shared Java type rules are supported.
-Drift enums must expose exactly one valid `@ThriftEnumValue` method; Swift enums
-continue to allow zero or one. An unannotated Java enum inherits the dialect of
-the model that references it and is validated independently when reached from
-multiple dialects. An explicitly annotated Swift model cannot be referenced by a
-Drift model (or vice versa); this is reported as `AW1001` at the reference site.
+Drift enums must declare the matching namespace's `@ThriftEnum` annotation and
+expose exactly one valid `@ThriftEnumValue` method. Swift continues to accept a
+plain Java enum and permits zero or one value method. A plain enum referenced by
+a Drift model is rejected with `AW1001`; an explicitly annotated Swift model
+cannot be referenced by a Drift model (or vice versa), and the Airlift and
+PrestoDB Drift namespaces cannot be mixed.
 
 Drift fields support `Optional<T>`, `OptionalInt`, `OptionalLong`, and
 `OptionalDouble`. Generic Optional elements are checked recursively, including
@@ -435,6 +460,13 @@ classpath names only when they are present in `LocalVariableTable`; a
 is absent, ThriftAnnotationLint models GeneralParanamer's deterministic `arg0`, `arg1`, ...
 fallback in both Swift ID-inference passes. Parameters must still declare an
 explicit `@ThriftField` ID or name as a codec-safety rule.
+
+Drift uses a different lookup strategy. A complete `MethodParameters` attribute
+emitted by `javac -parameters` takes precedence over debug information. Otherwise,
+Drift reads parameter slots from `LocalVariableTable` and finally falls back to
+reflection's `argN` names. ThriftAnnotationLint retains both class-file views and
+selects the one used by the model's codec runtime; `MethodParameters` never changes
+Swift/Paranamer behavior.
 
 For Java 8 compatibility, classpath bytecode is read through the annotation
 processor `CLASS_PATH`. If a model dependency is available only on a named

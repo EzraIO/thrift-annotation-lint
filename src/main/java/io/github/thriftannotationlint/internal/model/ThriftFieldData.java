@@ -39,7 +39,7 @@ public final class ThriftFieldData {
         for (ThriftAnnotationDialect dialect : ThriftAnnotationDialect.values()) {
             AnnotationMirror annotation = ThriftAnnotations.find(element, dialect.thriftField());
             if (annotation != null) {
-                return from(elements, annotation);
+                return from(elements, annotation, dialect);
             }
         }
         return empty();
@@ -49,10 +49,16 @@ public final class ThriftFieldData {
             Elements elements,
             Element element,
             ThriftAnnotationDialect dialect) {
-        return from(elements, ThriftAnnotations.find(element, dialect.thriftField()));
+        return from(
+                elements,
+                ThriftAnnotations.find(element, dialect.thriftField()),
+                dialect);
     }
 
-    public static ThriftFieldData from(Elements elements, AnnotationMirror annotation) {
+    public static ThriftFieldData from(
+            Elements elements,
+            AnnotationMirror annotation,
+            ThriftAnnotationDialect dialect) {
         if (annotation == null) {
             return empty();
         }
@@ -87,9 +93,10 @@ public final class ThriftFieldData {
 
         ThriftAnnotations.IdlAnnotations idl =
                 ThriftAnnotations.readIdlAnnotations(elements, annotation, "idlAnnotations");
-        if (recursive == null && idl.values().containsKey(ThriftAnnotations.RECURSIVE_IDL_KEY)) {
+        String recursiveIdlKey = dialect.runtime().recursiveReferenceIdlKey();
+        if (recursive == null && idl.values().containsKey(recursiveIdlKey)) {
             recursive = Boolean.valueOf(
-                    "true".equalsIgnoreCase(idl.values().get(ThriftAnnotations.RECURSIVE_IDL_KEY)));
+                    "true".equalsIgnoreCase(idl.values().get(recursiveIdlKey)));
         }
 
         return new ThriftFieldData(

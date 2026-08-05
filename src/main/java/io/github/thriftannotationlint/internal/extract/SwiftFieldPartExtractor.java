@@ -29,6 +29,8 @@ final class SwiftFieldPartExtractor {
     private final Elements elements;
     private final SwiftMemberResolver memberResolver;
     private final SwiftParameterFieldExtractor parameterFieldExtractor;
+    private final LombokAccessorInspector lombokAccessorInspector =
+            new LombokAccessorInspector();
 
     SwiftFieldPartExtractor(
             Elements elements,
@@ -74,8 +76,8 @@ final class SwiftFieldPartExtractor {
                     findings.add(Finding.error(
                             DiagnosticCode.INVALID_MEMBER_MODIFIERS,
                             field,
-                            "@ThriftField field '" + field.getSimpleName()
-                                    + "' must be public, non-static, and declared by a public type."));
+                            invalidFieldModifiersMessage(
+                                    hierarchyType, field, dialect)));
                     continue;
                 }
                 if (allowWriters && field.getModifiers().contains(Modifier.FINAL)) {
@@ -92,11 +94,27 @@ final class SwiftFieldPartExtractor {
                         field,
                         field.getSimpleName().toString(),
                         memberResolver.resolveMemberType(rootType, field),
-                        ThriftFieldData.from(elements, annotation),
+                        ThriftFieldData.from(elements, annotation, dialect),
                         allowReaders,
                         allowWriters));
             }
         }
+    }
+
+    private String invalidFieldModifiersMessage(
+            TypeElement declaringType,
+            VariableElement field,
+            ThriftAnnotationDialect dialect) {
+        String message = "@ThriftField field '" + field.getSimpleName()
+                + "' must be public, non-static, and declared by a public type.";
+        if (!field.getModifiers().contains(Modifier.PUBLIC)
+                && lombokAccessorInspector.mayGenerateAccessors(declaringType, field)) {
+            return message + " " + dialect.runtimeName()
+                    + " still validates the annotated non-public field; move @ThriftField to "
+                    + "Lombok-generated public accessors using field-level "
+                    + "@Getter/@Setter(onMethod_).";
+        }
+        return message;
     }
 
     void extractAnnotatedMethods(
@@ -157,7 +175,7 @@ final class SwiftFieldPartExtractor {
                         method,
                         SwiftMemberNames.extractedFieldName(method.getSimpleName().toString()),
                         resolved.returnType(),
-                        ThriftFieldData.from(elements, methodAnnotation),
+                        ThriftFieldData.from(elements, methodAnnotation, dialect),
                         true,
                         false));
                 continue;
@@ -189,7 +207,7 @@ final class SwiftFieldPartExtractor {
                     method.getParameters().get(0),
                     dialect.thriftField()));
             if (parameterMode) {
-                validateParameterInjectionMethod(method, methodAnnotation, findings);
+                validateParameterInjectionMethod(method, methodAnnotation, dialect, findings);
                 parameterFieldExtractor.addParameters(
                         FieldPart.Source.METHOD_PARAMETER,
                         method,
@@ -207,7 +225,7 @@ final class SwiftFieldPartExtractor {
                         method,
                         SwiftMemberNames.extractedFieldName(method.getSimpleName().toString()),
                         parameterTypes.get(0),
-                        ThriftFieldData.from(elements, methodAnnotation),
+                        ThriftFieldData.from(elements, methodAnnotation, dialect),
                         false,
                         true));
             }
@@ -243,8 +261,9 @@ final class SwiftFieldPartExtractor {
     private void validateParameterInjectionMethod(
             ExecutableElement method,
             AnnotationMirror annotation,
+            ThriftAnnotationDialect dialect,
             List<Finding> findings) {
-        ThriftFieldData data = ThriftFieldData.from(elements, annotation);
+        ThriftFieldData data = ThriftFieldData.from(elements, annotation, dialect);
         if (data.id() != null) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_METHOD_OR_CONSTRUCTOR,

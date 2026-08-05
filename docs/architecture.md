@@ -95,7 +95,7 @@ the same compilation do not create duplicate diagnostics.
 - `TypeHierarchyResolver` resolves mirror-first hierarchy views, with an
   element fallback for incomplete javac symbols and generic substitution;
 - `WireTypeClassifier` owns catalog lookup and shared classification precedence;
-- `WireTypeSupport` and `DialectTypePolicy` apply recursive support and codec capabilities;
+- `WireTypeSupport` and `DialectTypePolicy` apply recursive support and codec type policies;
 - `NormalizedWireTypeFormatter` and `CarrierShapeClassifier` own wire identity and Java wrapper
   compatibility rather than forwarding those decisions back to the catalog;
 - `JavaTypeIdentityFormatter` creates the exact identity strings used by state
@@ -118,6 +118,9 @@ an explicit argument and has no mutable cross-round extraction context.
 Model declaration checks, builder type binding, executable generic restoration, and parameter
 field identity each have a dedicated package-private owner; their public extraction order remains
 coordinated by the existing facades.
+`LombokAccessorInspector` recognizes source-level accessor generation without a production
+Lombok dependency. It can improve an invalid-member diagnostic, but it never invents Thrift
+metadata or hides a private annotated field that an official runtime will reject.
 The planner and extractor share one member resolver, which caches hierarchy and `getAllMembers`
 results only for the active round.
 Type classification and supertype views have the same round-local lifetime and are cleared before
@@ -126,11 +129,15 @@ historical roots are rebuilt.
 `ThriftAnnotationDialect` is the boundary between shared metadata validation and
 codec-specific annotation names. A model selects exactly one annotation dialect:
 Facebook Swift, Airlift Drift, or PrestoDB Drift. The two Drift dialects share
-runtime rules through an explicit Drift capability but retain exact annotation
+runtime rules through typed `ThriftRuntime` policies but retain exact annotation
 packages, cache identities, and graph boundaries. Extraction never searches a
 different dialect after selection, and mixed annotations fail before logical-field
 validation. This keeps the existing `SwiftModel` representation internal while
 preventing annotation families from being merged accidentally.
+`EnumPolicy`, `ParameterNameStrategy`, the recursive-reference IDL key, and the
+Optional-carrier flag describe the behaviors they control rather than inferring
+them from a broad `isDrift` branch. Shared field and validation logic remains
+single-path; only documented runtime differences consult these policies.
 Demand, pending-round state, recursion vertices, and validation caches carry the
 selected dialect explicitly. User-visible identities remain exact Java type
 names, while internal cache keys combine dialect and exact identity so a plain
@@ -138,16 +145,15 @@ enum reached from multiple dialects cannot be incorrectly deduplicated. Explicit
 model annotations take precedence over inherited reference dialects, and a
 cross-dialect reference terminates that branch with `AW1001`.
 
-Classpath parameter names are obtained through `ClasspathParameterNames`,
-which bounds resource reads and cache weight. `JvmDescriptorEncoder` produces
-declaration descriptors. `ClassFileConstantPoolReader`, `MethodDescriptorParser`, and the bounded
-data reader isolate the binary-format mechanics used by `ClassFileParameterNameParser`, which
-reads only the class-file structures needed to reproduce Paranamer 2.8. Local variable
-slot widths, non-zero start positions, partial tables, annotation-name
-all-or-nothing behavior, and the deterministic `argN` fallback are Swift compatibility
-requirements. `MethodParameters` alone is not treated as name evidence. Drift parameter
-resolution shares the bounded LVT reader but has its own annotation-name and failure
-fallback rules in `ThriftParameterNameResolver`.
+Classpath parameter names are obtained through `ClasspathParameterNames`, which
+bounds resource reads and cache weight. `JvmDescriptorEncoder` produces declaration
+descriptors; the constant-pool, descriptor, and bounded data readers isolate binary
+mechanics. `MethodParameterMetadata` retains distinct Swift and Drift views: the
+Swift view reproduces Paranamer 2.8 table-order and partial-table behavior, while
+the Drift view prefers complete `MethodParameters` and otherwise resolves exact
+LVT slots. `ThriftParameterNameResolver` selects the runtime view and owns
+annotation-name, fallback, and invalid-bytecode behavior. Neither runtime's lookup
+rules leak into the other dialect.
 
 ## Validation and diagnostics
 

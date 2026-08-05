@@ -28,7 +28,7 @@ Do not upload until the Central Portal shows `io.github.ezraio` as verified.
 If the Portal UI is unavailable, copy the validated deployment UUID from the
 upload workflow log and run **Publish validated Maven Central deployment**.
 That workflow verifies the deployment UUID, `VALIDATED` state, and exact
-`io.github.ezraio:thrift-annotation-lint:0.2.3` component before calling the
+`io.github.ezraio:thrift-annotation-lint:0.2.4` component before calling the
 Central Publisher API and waiting for `PUBLISHED`.
 
 For local publishing, use Maven `3.6.3` or newer, configure a Maven server named `central` in

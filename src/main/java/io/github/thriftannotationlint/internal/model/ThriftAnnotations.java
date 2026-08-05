@@ -18,7 +18,6 @@ import java.util.Map;
 
 public final class ThriftAnnotations {
     static final short UNSET_FIELD_ID = Short.MIN_VALUE;
-    static final String RECURSIVE_IDL_KEY = "swift.recursive_reference";
 
     private ThriftAnnotations() {
     }

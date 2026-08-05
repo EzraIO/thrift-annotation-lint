@@ -265,6 +265,17 @@ public final class CompilerTestSupport {
                 sources);
     }
 
+    public static CompilationResult compileWithPrecedingProcessor(
+            Processor processor,
+            Source... sources) {
+        return compileWithLanguageLevel(
+                "8",
+                Collections.<String>emptyList(),
+                Collections.singletonList(processor),
+                Collections.<Processor>emptyList(),
+                sources);
+    }
+
     public static CompilationResult compileWithOptionsAndAdditionalProcessor(
             List<String> processorOptions,
             Processor processor,
@@ -279,6 +290,20 @@ public final class CompilerTestSupport {
     private static CompilationResult compileWithLanguageLevel(
             String languageLevel,
             List<String> processorOptions,
+            List<Processor> additionalProcessors,
+            Source... sources) {
+        return compileWithLanguageLevel(
+                languageLevel,
+                processorOptions,
+                Collections.<Processor>emptyList(),
+                additionalProcessors,
+                sources);
+    }
+
+    private static CompilationResult compileWithLanguageLevel(
+            String languageLevel,
+            List<String> processorOptions,
+            List<Processor> precedingProcessors,
             List<Processor> additionalProcessors,
             Source... sources) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
@@ -316,6 +341,7 @@ public final class CompilerTestSupport {
                     null,
                     compilationUnits);
             List<Processor> processors = new ArrayList<Processor>();
+            processors.addAll(precedingProcessors);
             processors.add(new ThriftAnnotationLintProcessor());
             processors.addAll(additionalProcessors);
             task.setProcessors(processors);

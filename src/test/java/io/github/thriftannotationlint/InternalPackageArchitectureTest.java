@@ -118,11 +118,19 @@ class InternalPackageArchitectureTest {
         assertTrue(Files.exists(MAIN_PACKAGE.resolve(
                 "internal/extract/SwiftModelDeclarationValidator.java")));
         assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/extract/LombokAccessorInspector.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/model/ThriftRuntime.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
                 "internal/extract/SwiftParameterFieldExtractor.java")));
         assertTrue(Files.exists(MAIN_PACKAGE.resolve(
                 "internal/extract/SwiftBuilderTypeResolver.java")));
         assertTrue(Files.exists(MAIN_PACKAGE.resolve(
                 "internal/bytecode/ClassFileConstantPoolReader.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/bytecode/MethodParameterMetadata.java")));
+        assertTrue(Files.exists(MAIN_PACKAGE.resolve(
+                "internal/bytecode/ParameterNameLookup.java")));
     }
 
     @Test
@@ -138,6 +146,8 @@ class InternalPackageArchitectureTest {
         assertSourceAtMost("internal/extract/SwiftFieldPartExtractor.java", 320);
         assertSourceAtMost("internal/extract/SwiftConstructionExtractor.java", 320);
         assertSourceAtMost("internal/bytecode/ClassFileParameterNameParser.java", 320);
+        assertSourceAtMost("internal/bytecode/MethodParameterMetadata.java", 160);
+        assertSourceAtMost("internal/bytecode/ParameterNameLookup.java", 120);
     }
 
     @Test

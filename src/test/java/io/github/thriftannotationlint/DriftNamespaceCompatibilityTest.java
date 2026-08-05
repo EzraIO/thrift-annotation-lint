@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.github.thriftannotationlint.CompilerTestSupport.compile;
 import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspath;
+import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspathWithMethodParametersOnly;
 import static io.github.thriftannotationlint.CompilerTestSupport.compileAgainstClasspathWithoutDebug;
 import static io.github.thriftannotationlint.CompilerTestSupport.source;
 
@@ -109,6 +110,46 @@ final class DriftNamespaceCompatibilityTest {
         withDebug.assertSucceeded();
         withDebug.assertNoThriftAnnotationLintDiagnostics();
         withoutDebug.assertFailedWith("AW3003");
+    }
+
+    @Test
+    void usesMethodParametersForPrestoDriftClasspathModels() {
+        CompilerTestSupport.CompilationResult result =
+                compileAgainstClasspathWithMethodParametersOnly(
+                        new CompilerTestSupport.Source[]{source("dependency.PrestoParametersOnly",
+                                "package dependency;",
+                                "import com.facebook.drift.annotations.*;",
+                                "@ThriftStruct public class PrestoParametersOnly {",
+                                "  @ThriftConstructor",
+                                "  public PrestoParametersOnly(@ThriftField String value) {}",
+                                "  @ThriftField(1) public String getValue() { return \"\"; }",
+                                "}")},
+                        source("example.PrestoParametersRoot",
+                                "package example;",
+                                "import com.facebook.drift.annotations.*;",
+                                "@ThriftStruct public class PrestoParametersRoot {",
+                                "  @ThriftField(1) public dependency.PrestoParametersOnly value;",
+                                "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
+    }
+
+    @Test
+    void recognizesPrestoDriftRecursiveReferenceIdlKey() {
+        CompilerTestSupport.CompilationResult result = compile(source("example.PrestoRecursiveNode",
+                "package example;",
+                "import com.facebook.drift.annotations.*;",
+                "import static com.facebook.drift.annotations.ThriftField.Requiredness.OPTIONAL;",
+                "@ThriftStruct public class PrestoRecursiveNode {",
+                "  @ThriftField(value=1, requiredness=OPTIONAL,",
+                "      idlAnnotations=@ThriftIdlAnnotation(",
+                "          key=\"drift.recursive_reference\", value=\"true\"))",
+                "  public PrestoRecursiveNode next;",
+                "}"));
+
+        result.assertSucceeded();
+        result.assertNoThriftAnnotationLintDiagnostics();
     }
 
     @Test

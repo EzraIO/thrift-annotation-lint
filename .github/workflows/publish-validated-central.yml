@@ -23,7 +23,7 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           DEPLOYMENT_ID: ${{ inputs.deployment_id }}
-          EXPECTED_PURL: pkg:maven/io.github.ezraio/thrift-annotation-lint@0.2.3
+          EXPECTED_PURL: pkg:maven/io.github.ezraio/thrift-annotation-lint@0.2.4
         run: |
           set -euo pipefail
 

@@ -48,9 +48,12 @@ final class ThriftParameterNameResolver {
                     true);
         }
 
-        ClasspathParameterNames.LookupResult lookup = classpathParameterNames.find(executable);
+        ClasspathParameterNames.LookupResult lookup =
+                dialect.runtime().parameterNameStrategy().prefersMethodParameters()
+                        ? classpathParameterNames.findDriftNames(executable)
+                        : classpathParameterNames.findSwiftNames(executable);
         if (lookup.isInvalid()) {
-            if (dialect.isDrift()) {
+            if (dialect.runtime().parameterNameStrategy().fallsBackFromInvalidBytecode()) {
                 // Drift 1.18 catches bytecode lookup failures and falls back to reflection names.
                 return new Result(
                         generalParameterNames(executable), true, true, null, true, true);
@@ -67,15 +70,14 @@ final class ThriftParameterNameResolver {
             return new Result(
                     lookup.names(), true, false, null, false, true);
         }
-        if (dialect.isDrift()) {
-            // ParameterNames falls back to reflection, which yields argN without -parameters.
-            return new Result(
-                    generalParameterNames(executable), true, true, null, true, true);
-        }
-        // Supported Swift releases ignore MethodParameters and deterministically fall back to
-        // GeneralParanamer's argN names when no LocalVariableTable is present.
+        // Drift's reflection fallback and Swift's GeneralParanamer fallback both yield argN
+        // without an LVT. A partial Drift MethodParameters attribute can retain a mix of
+        // declared and argN names, which the bytecode lookup exposes as its fallback view.
+        List<String> fallbackNames = lookup.fallbackNames() == null
+                ? generalParameterNames(executable)
+                : lookup.fallbackNames();
         return new Result(
-                generalParameterNames(executable), true, true, null, true, true);
+                fallbackNames, true, true, null, true, true);
     }
 
     List<String> annotationNames(
@@ -98,7 +100,7 @@ final class ThriftParameterNameResolver {
                     name = thriftName.isEmpty() ? null : thriftName;
                     break;
                 }
-                if (dialect == ThriftAnnotationDialect.FACEBOOK_SWIFT
+                if (dialect.runtime().parameterNameStrategy().supportsJavaxInjectNamed()
                         && "javax.inject.Named".equals(annotationName)) {
                     // AnnotationParanamer preserves Named.value(), including its empty default.
                     name = ThriftAnnotations.stringValue(elements, annotation, "value");

@@ -44,6 +44,10 @@ final class SwiftEnumMetadataExtractor {
             TypeElement enumType,
             ThriftAnnotationDialect dialect,
             List<Finding> findings) {
+        if (dialect.runtime().enumPolicy().requiresModelAnnotation()
+                && !ThriftAnnotations.has(enumType, dialect.thriftEnum())) {
+            return Collections.emptyList();
+        }
         List<ExecutableElement> methods = new ArrayList<ExecutableElement>();
         for (ExecutableElement method
                 : ElementFilter.methodsIn(memberResolver.allMembers(enumType))) {
@@ -68,7 +72,7 @@ final class SwiftEnumMetadataExtractor {
                             + "' must declare at most one @ThriftEnumValue method."));
         }
         else if (methods.isEmpty()
-                && dialect.isDrift()) {
+                && dialect.runtime().enumPolicy().requiresValueMethod()) {
             findings.add(Finding.error(
                     DiagnosticCode.INVALID_ENUM_VALUE_METHOD,
                     enumType,

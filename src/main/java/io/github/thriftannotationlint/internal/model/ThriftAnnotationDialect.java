@@ -2,24 +2,24 @@ package io.github.thriftannotationlint.internal.model;
 
 /** Qualified annotation names and runtime-specific behavior for a supported Thrift codec. */
 public enum ThriftAnnotationDialect {
-    FACEBOOK_SWIFT("Facebook Swift", "Swift", "com.facebook.swift.codec", false),
-    AIRLIFT_DRIFT("Airlift Drift", "Drift", "io.airlift.drift.annotations", true),
-    PRESTODB_DRIFT("PrestoDB Drift", "Drift", "com.facebook.drift.annotations", true);
+    FACEBOOK_SWIFT(
+            "Facebook Swift", "com.facebook.swift.codec", ThriftRuntime.SWIFT),
+    AIRLIFT_DRIFT(
+            "Airlift Drift", "io.airlift.drift.annotations", ThriftRuntime.DRIFT),
+    PRESTODB_DRIFT(
+            "PrestoDB Drift", "com.facebook.drift.annotations", ThriftRuntime.DRIFT);
 
     private final String displayName;
-    private final String runtimeName;
     private final String annotationPackage;
-    private final boolean drift;
+    private final ThriftRuntime runtime;
 
     ThriftAnnotationDialect(
             String displayName,
-            String runtimeName,
             String annotationPackage,
-            boolean drift) {
+            ThriftRuntime runtime) {
         this.displayName = displayName;
-        this.runtimeName = runtimeName;
         this.annotationPackage = annotationPackage;
-        this.drift = drift;
+        this.runtime = runtime;
     }
 
     public String displayName() {
@@ -27,11 +27,11 @@ public enum ThriftAnnotationDialect {
     }
 
     public String runtimeName() {
-        return runtimeName;
+        return runtime.displayName();
     }
 
-    public boolean isDrift() {
-        return drift;
+    public ThriftRuntime runtime() {
+        return runtime;
     }
 
     public String thriftStruct() {
@@ -63,7 +63,9 @@ public enum ThriftAnnotationDialect {
     }
 
     public String thriftEnumUnknownValue() {
-        return isDrift() ? annotation("ThriftEnumUnknownValue") : null;
+        return runtime.enumPolicy().supportsUnknownValue()
+                ? annotation("ThriftEnumUnknownValue")
+                : null;
     }
 
     public String thriftIdlAnnotation() {

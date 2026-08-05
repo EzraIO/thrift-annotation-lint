@@ -1,6 +1,8 @@
 package io.github.thriftannotationlint.internal.bytecode;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Computes JVM local-variable slots for method parameters. */
 final class MethodDescriptorParser {
@@ -16,9 +18,11 @@ final class MethodDescriptorParser {
                 ? STATIC_FIRST_PARAMETER_SLOT
                 : INSTANCE_FIRST_PARAMETER_SLOT;
         int slot = firstSlot;
+        List<Integer> parameterSlots = new ArrayList<Integer>();
         int index = FIRST_PARAMETER_DESCRIPTOR_INDEX;
         while (index < descriptor.length() && descriptor.charAt(index) != ')') {
             parameterCount++;
+            parameterSlots.add(slot);
             char type = descriptor.charAt(index);
             boolean array = false;
             while (type == '[') {
@@ -41,7 +45,11 @@ final class MethodDescriptorParser {
         if (index >= descriptor.length() || descriptor.charAt(index) != ')') {
             throw invalid(descriptor);
         }
-        return new Layout(parameterCount, firstSlot, slot);
+        int[] slots = new int[parameterSlots.size()];
+        for (int parameterIndex = 0; parameterIndex < parameterSlots.size(); parameterIndex++) {
+            slots[parameterIndex] = parameterSlots.get(parameterIndex);
+        }
+        return new Layout(parameterCount, firstSlot, slot, slots);
     }
 
     private int slotWidth(char type, boolean array) {
@@ -67,11 +75,13 @@ final class MethodDescriptorParser {
         final int parameterCount;
         final int firstSlot;
         final int slotLimit;
+        final int[] parameterSlots;
 
-        Layout(int parameterCount, int firstSlot, int slotLimit) {
+        Layout(int parameterCount, int firstSlot, int slotLimit, int[] parameterSlots) {
             this.parameterCount = parameterCount;
             this.firstSlot = firstSlot;
             this.slotLimit = slotLimit;
+            this.parameterSlots = parameterSlots.clone();
         }
     }
 }

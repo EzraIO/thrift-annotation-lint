@@ -18,7 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Loads and caches classpath metadata used by Swift's Paranamer integration. */
+/** Loads and caches classpath parameter metadata used by supported codec runtimes. */
 public final class ClasspathParameterNames {
     private static final int CACHE_INITIAL_CAPACITY = 16;
     private static final float CACHE_LOAD_FACTOR = 0.75f;
@@ -60,7 +60,17 @@ public final class ClasspathParameterNames {
         this.parser = parser;
     }
 
-    public LookupResult find(ExecutableElement executable) {
+    public LookupResult findSwiftNames(ExecutableElement executable) {
+        return find(executable, ParameterMetadataView.SWIFT);
+    }
+
+    public LookupResult findDriftNames(ExecutableElement executable) {
+        return find(executable, ParameterMetadataView.DRIFT);
+    }
+
+    private LookupResult find(
+            ExecutableElement executable,
+            ParameterMetadataView view) {
         TypeElement owner = declaringType(executable);
         if (owner == null) {
             return LookupResult.absent();
@@ -75,7 +85,8 @@ public final class ClasspathParameterNames {
                 ? "<init>"
                 : executable.getSimpleName().toString();
         return classLookup.find(
-                methodName + "\u0000" + descriptorEncoder.parameterDescriptor(executable));
+                methodName + "\u0000" + descriptorEncoder.parameterDescriptor(executable),
+                view);
     }
 
     private ClassLookup readClass(String binaryName) {
@@ -150,25 +161,36 @@ public final class ClasspathParameterNames {
 
     public static final class LookupResult {
         private final List<String> names;
+        private final List<String> fallbackNames;
         private final String failure;
 
-        private LookupResult(List<String> names, String failure) {
+        private LookupResult(
+                List<String> names,
+                List<String> fallbackNames,
+                String failure) {
             this.names = names == null
                     ? null
                     : Collections.unmodifiableList(new ArrayList<String>(names));
+            this.fallbackNames = fallbackNames == null
+                    ? null
+                    : Collections.unmodifiableList(new ArrayList<String>(fallbackNames));
             this.failure = failure;
         }
 
         static LookupResult found(List<String> names) {
-            return new LookupResult(names, null);
+            return new LookupResult(names, null, null);
         }
 
         static LookupResult absent() {
-            return new LookupResult(null, null);
+            return absent(null);
+        }
+
+        static LookupResult absent(List<String> fallbackNames) {
+            return new LookupResult(null, fallbackNames, null);
         }
 
         static LookupResult invalid(String failure) {
-            return new LookupResult(null, failure);
+            return new LookupResult(null, null, failure);
         }
 
         public boolean isFound() {
@@ -183,6 +205,12 @@ public final class ClasspathParameterNames {
             return names == null ? null : new ArrayList<String>(names);
         }
 
+        public List<String> fallbackNames() {
+            return fallbackNames == null
+                    ? null
+                    : new ArrayList<String>(fallbackNames);
+        }
+
         public String failure() {
             return failure;
         }
@@ -195,6 +223,12 @@ public final class ClasspathParameterNames {
             if (names != null) {
                 weight += LIST_BASE_WEIGHT + REFERENCE_WEIGHT * names.size();
                 for (String name : names) {
+                    weight += stringWeight(name);
+                }
+            }
+            if (fallbackNames != null) {
+                weight += LIST_BASE_WEIGHT + REFERENCE_WEIGHT * fallbackNames.size();
+                for (String name : fallbackNames) {
                     weight += stringWeight(name);
                 }
             }
@@ -221,17 +255,19 @@ public final class ClasspathParameterNames {
             return new ClassLookup(null, failure);
         }
 
-        LookupResult find(String key) {
+        LookupResult find(String key, ParameterMetadataView view) {
             if (failure != null) {
                 return LookupResult.invalid(failure);
             }
-            ClassFileParameterNameParser.MethodLookup lookup = parsedClass.find(key);
+            ParameterNameLookup lookup = view == ParameterMetadataView.DRIFT
+                    ? parsedClass.findDrift(key)
+                    : parsedClass.findSwift(key);
             if (lookup.isInvalid()) {
                 return LookupResult.invalid(lookup.failure());
             }
             return lookup.isFound()
                     ? LookupResult.found(lookup.names())
-                    : LookupResult.absent();
+                    : LookupResult.absent(lookup.fallbackNames());
         }
 
         long estimatedWeight(String binaryName) {
@@ -241,6 +277,11 @@ public final class ClasspathParameterNames {
             return CLASS_LOOKUP_BASE_WEIGHT
                     + stringWeight(binaryName) + stringWeight(failure);
         }
+    }
+
+    private enum ParameterMetadataView {
+        SWIFT,
+        DRIFT
     }
 
     private static long stringWeight(String value) {
