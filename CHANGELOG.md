@@ -20,6 +20,9 @@ the project intends to use [Semantic Versioning](https://semver.org/).
   separated the class-file metadata views, preserving public APIs and
   diagnostic contracts while making the supported runtime differences local and
   auditable.
+- Run the Lombok integration coverage through the real `javac` executable so
+  the test uses Lombok's supported class-loader path on JDK 8 as well as newer
+  JDKs.
 
 ### Added
 
